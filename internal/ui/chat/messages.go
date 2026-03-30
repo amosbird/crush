@@ -295,7 +295,7 @@ func ExtractMessageItems(sty *styles.Styles, msg *message.Message, toolResults m
 				msg.ID,
 				tc,
 				result,
-				msg.FinishReason() == message.FinishReasonCanceled,
+				msg.FinishReason() == message.FinishReasonCanceled || (result == nil && msg.IsFinished()),
 			))
 		}
 		return items
