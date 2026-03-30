@@ -50,7 +50,10 @@ func openInLSPs(
 		return
 	}
 
-	manager.Start(ctx, filepath)
+	startCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	manager.Start(startCtx, filepath)
 
 	for client := range manager.Clients().Seq() {
 		if !client.HandlesFile(filepath) {
@@ -96,16 +99,23 @@ func notifyLSPs(
 		return
 	}
 
-	manager.Start(ctx, filepath)
+	startCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 
+	manager.Start(startCtx, filepath)
+
+	var wg sync.WaitGroup
 	for client := range manager.Clients().Seq() {
 		if !client.HandlesFile(filepath) {
 			continue
 		}
 		_ = client.OpenFileOnDemand(ctx, filepath)
 		_ = client.NotifyChange(ctx, filepath)
-		client.WaitForDiagnostics(ctx, 5*time.Second)
+		wg.Go(func() {
+			client.WaitForDiagnostics(ctx, 5*time.Second)
+		})
 	}
+	wg.Wait()
 }
 
 func getDiagnostics(filePath string, manager *lsp.Manager) string {
