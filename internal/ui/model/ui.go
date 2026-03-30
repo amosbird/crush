@@ -2314,7 +2314,6 @@ func (m *UI) View() tea.View {
 func (m *UI) ShortHelp() []key.Binding {
 	var binds []key.Binding
 	k := &m.keyMap
-	tab := k.Tab
 	commands := k.Commands
 	if m.focus == uiFocusEditor && m.textarea.Value() == "" {
 		commands.SetHelp("/ or ctrl+p", "commands")
@@ -2324,7 +2323,6 @@ func (m *UI) ShortHelp() []key.Binding {
 	case uiInitialize:
 		binds = append(binds, k.Quit)
 	case uiChat:
-		// Show cancel binding if agent is busy.
 		if m.isAgentBusy() {
 			cancelBinding := k.Chat.Cancel
 			if m.isCanceling {
@@ -2335,39 +2333,14 @@ func (m *UI) ShortHelp() []key.Binding {
 			binds = append(binds, cancelBinding)
 		}
 
-		if m.focus == uiFocusEditor {
-			tab.SetHelp("tab", "focus chat")
-		} else {
-			tab.SetHelp("tab", "focus editor")
-		}
-
 		binds = append(binds,
-			tab,
 			commands,
 			k.Models,
+			k.Editor.Newline,
+			k.Editor.PrevUserMessage,
+			k.Editor.ScrollToEnd,
 		)
-
-		switch m.focus {
-		case uiFocusEditor:
-			binds = append(binds,
-				k.Editor.Newline,
-			)
-		case uiFocusMain:
-			binds = append(binds,
-				k.Chat.UpDown,
-				k.Chat.UpDownOneItem,
-				k.Chat.PageUp,
-				k.Chat.PageDown,
-				k.Chat.Copy,
-			)
-			if m.pillsExpanded && hasIncompleteTodos(m.session.Todos) && m.promptQueue > 0 {
-				binds = append(binds, k.Chat.PillLeft)
-			}
-		}
 	default:
-		// TODO: other states
-		// if m.session == nil {
-		// no session selected
 		binds = append(binds,
 			commands,
 			k.Models,
@@ -2403,7 +2376,6 @@ func (m *UI) FullHelp() [][]key.Binding {
 				k.Quit,
 			})
 	case uiChat:
-		// Show cancel binding if agent is busy.
 		if m.isAgentBusy() {
 			cancelBinding := k.Chat.Cancel
 			if m.isCanceling {
@@ -2414,95 +2386,62 @@ func (m *UI) FullHelp() [][]key.Binding {
 			binds = append(binds, []key.Binding{cancelBinding})
 		}
 
-		mainBinds := []key.Binding{}
-		tab := k.Tab
-		if m.focus == uiFocusEditor {
-			tab.SetHelp("tab", "focus chat")
-		} else {
-			tab.SetHelp("tab", "focus editor")
-		}
-
-		mainBinds = append(mainBinds,
-			tab,
+		mainBinds := []key.Binding{
 			commands,
 			k.Models,
 			k.Sessions,
-		)
+		}
 		if hasSession {
 			mainBinds = append(mainBinds, k.Chat.NewSession)
 		}
-
 		binds = append(binds, mainBinds)
 
-		switch m.focus {
-		case uiFocusEditor:
+		binds = append(binds,
+			[]key.Binding{
+				k.Editor.Newline,
+				k.Editor.AddImage,
+				k.Editor.PasteImage,
+				k.Editor.MentionFile,
+				k.Editor.OpenEditor,
+			},
+			[]key.Binding{
+				k.Editor.PrevUserMessage,
+				k.Editor.NextUserMessage,
+				k.Editor.ScrollToEnd,
+			},
+		)
+		if hasAttachments {
 			binds = append(binds,
 				[]key.Binding{
-					k.Editor.Newline,
-					k.Editor.AddImage,
-					k.Editor.PasteImage,
-					k.Editor.MentionFile,
-					k.Editor.OpenEditor,
+					k.Editor.AttachmentDeleteMode,
+					k.Editor.DeleteAllAttachments,
+					k.Editor.Escape,
 				},
 			)
-			if hasAttachments {
-				binds = append(binds,
-					[]key.Binding{
-						k.Editor.AttachmentDeleteMode,
-						k.Editor.DeleteAllAttachments,
-						k.Editor.Escape,
-					},
-				)
-			}
-		case uiFocusMain:
-			binds = append(binds,
-				[]key.Binding{
-					k.Chat.UpDown,
-					k.Chat.UpDownOneItem,
-					k.Chat.PageUp,
-					k.Chat.PageDown,
-				},
-				[]key.Binding{
-					k.Chat.HalfPageUp,
-					k.Chat.HalfPageDown,
-					k.Chat.Home,
-					k.Chat.End,
-				},
-				[]key.Binding{
-					k.Chat.Copy,
-					k.Chat.ClearHighlight,
-				},
-			)
-			if m.pillsExpanded && hasIncompleteTodos(m.session.Todos) && m.promptQueue > 0 {
-				binds = append(binds, []key.Binding{k.Chat.PillLeft})
-			}
 		}
 	default:
-		if m.session == nil {
-			// no session selected
+		binds = append(binds,
+			[]key.Binding{
+				commands,
+				k.Models,
+				k.Sessions,
+			},
+			[]key.Binding{
+				k.Editor.Newline,
+				k.Editor.AddImage,
+				k.Editor.PasteImage,
+				k.Editor.MentionFile,
+				k.Editor.OpenEditor,
+			},
+		)
+		if hasAttachments {
 			binds = append(binds,
 				[]key.Binding{
-					commands,
-					k.Models,
-					k.Sessions,
-				},
-				[]key.Binding{
-					k.Editor.Newline,
-					k.Editor.AddImage,
-					k.Editor.PasteImage,
-					k.Editor.MentionFile,
-					k.Editor.OpenEditor,
+					k.Editor.AttachmentDeleteMode,
+					k.Editor.DeleteAllAttachments,
+					k.Editor.Escape,
 				},
 			)
-			if hasAttachments {
-				binds = append(binds,
-					[]key.Binding{
-						k.Editor.AttachmentDeleteMode,
-						k.Editor.DeleteAllAttachments,
-						k.Editor.Escape,
-					},
-				)
-			}
 		}
 	}
 
