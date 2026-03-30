@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
 	"github.com/charmbracelet/crush/internal/agent/hyper"
@@ -783,8 +784,10 @@ func assignIfNil[T any](ptr **T, val T) {
 }
 
 func isInsideWorktree() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	bts, err := exec.CommandContext(
-		context.Background(),
+		ctx,
 		"git", "rev-parse",
 		"--is-inside-work-tree",
 	).CombinedOutput()

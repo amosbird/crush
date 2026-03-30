@@ -201,3 +201,10 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
+
+// Constraint-based layout engine, wide-character rendering fixes, and
+// synchronized updates (DEC mode 2026).
+replace github.com/charmbracelet/ultraviolet => github.com/amosbird/ultraviolet v0.0.0-20260328105448-64062a4afda8
+
+// Word-boundary aware Ctrl+W/Ctrl+D and CJK cursor positioning fix.
+replace charm.land/bubbles/v2 => github.com/amosbird/bubbles/v2 v2.1.1-0.20260329024325-01e52635f8e0

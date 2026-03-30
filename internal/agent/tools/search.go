@@ -69,7 +69,8 @@ func searchDuckDuckGo(ctx context.Context, client *http.Client, query string, ma
 		return nil, fmt.Errorf("search failed with status code: %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	const maxSearchResponseSize = 5 << 20 // 5MB
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchResponseSize))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -206,14 +207,23 @@ var (
 )
 
 // maybeDelaySearch adds a random delay if the last search was recent.
-func maybeDelaySearch() {
+func maybeDelaySearch(ctx context.Context) {
 	lastSearchMu.Lock()
-	defer lastSearchMu.Unlock()
+	elapsed := time.Since(lastSearchTime)
+	lastSearchMu.Unlock()
 
 	minGap := time.Duration(500+rand.IntN(1500)) * time.Millisecond
-	elapsed := time.Since(lastSearchTime)
 	if elapsed < minGap {
-		time.Sleep(minGap - elapsed)
+		t := time.NewTimer(minGap - elapsed)
+		defer t.Stop()
+		select {
+		case <-t.C:
+		case <-ctx.Done():
+			return
+		}
 	}
+
+	lastSearchMu.Lock()
 	lastSearchTime = time.Now()
+	lastSearchMu.Unlock()
 }

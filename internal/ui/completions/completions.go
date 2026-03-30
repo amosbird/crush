@@ -2,15 +2,18 @@ package completions
 
 import (
 	"cmp"
+	"context"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/agent/tools/mcp"
+	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/ui/list"
 	"github.com/charmbracelet/x/ansi"
@@ -135,14 +138,24 @@ func (c *Completions) KeyMap() KeyMap {
 func (c *Completions) Open(depth, limit int) tea.Cmd {
 	return func() tea.Msg {
 		var msg CompletionItemsLoadedMsg
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		var files []FileCompletionValue
+		var resources []ResourceCompletionValue
+
 		var wg sync.WaitGroup
 		wg.Go(func() {
-			msg.Files = loadFiles(depth, limit)
+			files = loadFiles(depth, limit)
 		})
 		wg.Go(func() {
-			msg.Resources = loadMCPResources()
+			resources = loadMCPResources()
 		})
-		wg.Wait()
+
+		if csync.WaitWithContext(ctx, &wg) {
+			msg.Files = files
+			msg.Resources = resources
+		}
 		return msg
 	}
 }
@@ -401,7 +414,7 @@ func (c *Completions) Render() string {
 }
 
 func loadFiles(depth, limit int) []FileCompletionValue {
-	files, _, _ := fsext.ListDirectory(".", nil, depth, limit)
+	files, _, _ := fsext.ListDirectory(context.TODO(), ".", nil, depth, limit)
 	slices.Sort(files)
 	result := make([]FileCompletionValue, 0, len(files))
 	for _, file := range files {

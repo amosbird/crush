@@ -53,7 +53,8 @@ type ViewResponseMetadata struct {
 
 const (
 	ViewToolName     = "view"
-	MaxViewSize      = 1 * 1024 * 1024 // 1MB
+	MaxViewSize      = 1 * 1024 * 1024  // 1MB
+	MaxImageSize     = 10 * 1024 * 1024 // 10MB
 	DefaultReadLimit = 2000
 	MaxLineLength    = 2000
 )
@@ -171,6 +172,10 @@ func NewViewTool(
 
 			isSupportedImage, mimeType := getImageMimeType(filePath)
 			if isSupportedImage {
+				if fileInfo.Size() > MaxImageSize {
+					return fantasy.NewTextErrorResponse(fmt.Sprintf("Image file is too large (%d bytes). Maximum size is %d bytes",
+						fileInfo.Size(), MaxImageSize)), nil
+				}
 				if !GetSupportsImagesFromContext(ctx) {
 					modelName := GetModelNameFromContext(ctx)
 					return fantasy.NewTextErrorResponse(fmt.Sprintf("This model (%s) does not support image data.", modelName)), nil

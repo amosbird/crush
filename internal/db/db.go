@@ -108,6 +108,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listMessagesBySessionStmt, err = db.PrepareContext(ctx, listMessagesBySession); err != nil {
 		return nil, fmt.Errorf("error preparing query ListMessagesBySession: %w", err)
 	}
+	if q.listMessagesBySessionBeforeStmt, err = db.PrepareContext(ctx, listMessagesBySessionBefore); err != nil {
+		return nil, fmt.Errorf("error preparing query ListMessagesBySessionBefore: %w", err)
+	}
 	if q.listNewFilesStmt, err = db.PrepareContext(ctx, listNewFiles); err != nil {
 		return nil, fmt.Errorf("error preparing query ListNewFiles: %w", err)
 	}
@@ -116,6 +119,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listSessionsStmt, err = db.PrepareContext(ctx, listSessions); err != nil {
 		return nil, fmt.Errorf("error preparing query ListSessions: %w", err)
+	}
+	if q.listRecentMessagesBySessionStmt, err = db.PrepareContext(ctx, listRecentMessagesBySession); err != nil {
+		return nil, fmt.Errorf("error preparing query ListRecentMessagesBySession: %w", err)
 	}
 	if q.listUserMessagesBySessionStmt, err = db.PrepareContext(ctx, listUserMessagesBySession); err != nil {
 		return nil, fmt.Errorf("error preparing query ListUserMessagesBySession: %w", err)
@@ -280,6 +286,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listMessagesBySessionStmt: %w", cerr)
 		}
 	}
+	if q.listMessagesBySessionBeforeStmt != nil {
+		if cerr := q.listMessagesBySessionBeforeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listMessagesBySessionBeforeStmt: %w", cerr)
+		}
+	}
 	if q.listNewFilesStmt != nil {
 		if cerr := q.listNewFilesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listNewFilesStmt: %w", cerr)
@@ -293,6 +304,11 @@ func (q *Queries) Close() error {
 	if q.listSessionsStmt != nil {
 		if cerr := q.listSessionsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listSessionsStmt: %w", cerr)
+		}
+	}
+	if q.listRecentMessagesBySessionStmt != nil {
+		if cerr := q.listRecentMessagesBySessionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listRecentMessagesBySessionStmt: %w", cerr)
 		}
 	}
 	if q.listUserMessagesBySessionStmt != nil {
@@ -392,7 +408,9 @@ type Queries struct {
 	listFilesBySessionStmt         *sql.Stmt
 	listLatestSessionFilesStmt     *sql.Stmt
 	listMessagesBySessionStmt      *sql.Stmt
+	listMessagesBySessionBeforeStmt *sql.Stmt
 	listNewFilesStmt               *sql.Stmt
+	listRecentMessagesBySessionStmt *sql.Stmt
 	listSessionReadFilesStmt       *sql.Stmt
 	listSessionsStmt               *sql.Stmt
 	listUserMessagesBySessionStmt  *sql.Stmt
@@ -435,9 +453,11 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listFilesBySessionStmt:         q.listFilesBySessionStmt,
 		listLatestSessionFilesStmt:     q.listLatestSessionFilesStmt,
 		listMessagesBySessionStmt:      q.listMessagesBySessionStmt,
+		listMessagesBySessionBeforeStmt: q.listMessagesBySessionBeforeStmt,
 		listNewFilesStmt:               q.listNewFilesStmt,
 		listSessionReadFilesStmt:       q.listSessionReadFilesStmt,
 		listSessionsStmt:               q.listSessionsStmt,
+		listRecentMessagesBySessionStmt: q.listRecentMessagesBySessionStmt,
 		listUserMessagesBySessionStmt:  q.listUserMessagesBySessionStmt,
 		recordFileReadStmt:             q.recordFileReadStmt,
 		renameSessionStmt:              q.renameSessionStmt,

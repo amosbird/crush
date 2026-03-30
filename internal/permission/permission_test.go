@@ -55,7 +55,7 @@ func TestPermissionService_AllowedCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			service := NewPermissionService("/tmp", false, tt.allowedTools)
+			service := NewPermissionService("/tmp", false, tt.allowedTools, false)
 
 			// Create a channel to capture the permission request
 			// Since we're testing the allowlist logic, we need to simulate the request
@@ -80,7 +80,7 @@ func TestPermissionService_AllowedCommands(t *testing.T) {
 }
 
 func TestPermissionService_SkipMode(t *testing.T) {
-	service := NewPermissionService("/tmp", true, []string{})
+	service := NewPermissionService("/tmp", true, []string{}, false)
 
 	result, err := service.Request(t.Context(), CreatePermissionRequest{
 		SessionID:   "test-session",
@@ -99,7 +99,7 @@ func TestPermissionService_SkipMode(t *testing.T) {
 
 func TestPermissionService_SequentialProperties(t *testing.T) {
 	t.Run("Sequential permission requests with persistent grants", func(t *testing.T) {
-		service := NewPermissionService("/tmp", false, []string{})
+		service := NewPermissionService("/tmp", false, []string{}, false)
 
 		req1 := CreatePermissionRequest{
 			SessionID:   "session1",
@@ -144,7 +144,7 @@ func TestPermissionService_SequentialProperties(t *testing.T) {
 		assert.True(t, result2, "Second request should be auto-approved")
 	})
 	t.Run("Sequential requests with temporary grants", func(t *testing.T) {
-		service := NewPermissionService("/tmp", false, []string{})
+		service := NewPermissionService("/tmp", false, []string{}, false)
 
 		req := CreatePermissionRequest{
 			SessionID:   "session2",
@@ -184,7 +184,7 @@ func TestPermissionService_SequentialProperties(t *testing.T) {
 		assert.False(t, result2, "Second request should be denied")
 	})
 	t.Run("Concurrent requests with different outcomes", func(t *testing.T) {
-		service := NewPermissionService("/tmp", false, []string{})
+		service := NewPermissionService("/tmp", false, []string{}, false)
 
 		events := service.Subscribe(t.Context())
 

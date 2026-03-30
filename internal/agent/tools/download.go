@@ -66,28 +66,6 @@ func NewDownloadTool(permissions permission.Service, workingDir string, client *
 			relPath, _ := filepath.Rel(workingDir, filePath)
 			relPath = filepath.ToSlash(cmp.Or(relPath, filePath))
 
-			sessionID := GetSessionFromContext(ctx)
-			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for downloading files")
-			}
-
-			p, err := permissions.Request(ctx,
-				permission.CreatePermissionRequest{
-					SessionID:   sessionID,
-					Path:        filePath,
-					ToolName:    DownloadToolName,
-					Action:      "download",
-					Description: fmt.Sprintf("Download file from URL: %s to %s", params.URL, filePath),
-					Params:      DownloadPermissionsParams(params),
-				},
-			)
-			if err != nil {
-				return fantasy.ToolResponse{}, err
-			}
-			if !p {
-				return fantasy.ToolResponse{}, permission.ErrorPermissionDenied
-			}
-
 			// Handle timeout with context
 			requestCtx := ctx
 			if params.Timeout > 0 {
@@ -134,6 +112,8 @@ func NewDownloadTool(permissions permission.Service, workingDir string, client *
 			// and any upstream server limits.
 			bytesWritten, err := io.Copy(outFile, resp.Body)
 			if err != nil {
+				outFile.Close()
+				os.Remove(filePath)
 				return fantasy.ToolResponse{}, fmt.Errorf("failed to write file: %w", err)
 			}
 

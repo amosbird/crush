@@ -78,12 +78,13 @@ func (m *Map[K, V]) Len() int {
 // GetOrSet gets and returns the key if it exists, otherwise, it executes the
 // given function, set its return value for the given key, and returns it.
 func (m *Map[K, V]) GetOrSet(key K, fn func() V) V {
-	got, ok := m.Get(key)
-	if ok {
-		return got
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if v, ok := m.inner[key]; ok {
+		return v
 	}
 	value := fn()
-	m.Set(key, value)
+	m.inner[key] = value
 	return value
 }
 
@@ -94,6 +95,15 @@ func (m *Map[K, V]) Take(key K) (V, bool) {
 	v, ok := m.inner[key]
 	delete(m.inner, key)
 	return v, ok
+}
+
+// Update atomically applies a function to the value for the given key.
+// If the key does not exist, the function receives the zero value.
+// The function's return value is stored back into the map.
+func (m *Map[K, V]) Update(key K, fn func(V) V) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.inner[key] = fn(m.inner[key])
 }
 
 // Copy returns a copy of the inner map.

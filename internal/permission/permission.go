@@ -6,7 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/pubsub"
@@ -64,8 +67,9 @@ type permissionService struct {
 	pendingRequests       *csync.Map[string, chan bool]
 	autoApproveSessions   map[string]bool
 	autoApproveSessionsMu sync.RWMutex
-	skip                  bool
+	skip                  atomic.Bool
 	allowedTools          []string
+	autoApproveWorkingDir bool
 
 	// used to make sure we only process one request at a time
 	requestMu       sync.Mutex
@@ -130,7 +134,7 @@ func (s *permissionService) Deny(permission PermissionRequest) {
 }
 
 func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRequest) (bool, error) {
-	if s.skip {
+	if s.skip.Load() {
 		return true, nil
 	}
 
@@ -172,6 +176,16 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 	if dir == "." {
 		dir = s.workingDir
 	}
+
+	// Auto-approve operations on paths within the working directory.
+	if s.autoApproveWorkingDir && s.workingDir != "" && isWithinDir(dir, s.workingDir) {
+		s.notificationBroker.Publish(pubsub.CreatedEvent, PermissionNotification{
+			ToolCallID: opts.ToolCallID,
+			Granted:    true,
+		})
+		return true, nil
+	}
+
 	permission := PermissionRequest{
 		ID:          uuid.New().String(),
 		Path:        dir,
@@ -204,14 +218,23 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 	s.pendingRequests.Set(permission.ID, respCh)
 	defer s.pendingRequests.Del(permission.ID)
 
-	// Publish the request
+	// Publish the request with periodic retries. The event pipeline can
+	// drop messages under backpressure (e.g. during heavy streaming), so
+	// we re-publish periodically until the UI responds.
 	s.Publish(pubsub.CreatedEvent, permission)
 
-	select {
-	case <-ctx.Done():
-		return false, ctx.Err()
-	case granted := <-respCh:
-		return granted, nil
+	retryTicker := time.NewTicker(3 * time.Second)
+	defer retryTicker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case granted := <-respCh:
+			return granted, nil
+		case <-retryTicker.C:
+			s.Publish(pubsub.CreatedEvent, permission)
+		}
 	}
 }
 
@@ -226,22 +249,58 @@ func (s *permissionService) SubscribeNotifications(ctx context.Context) <-chan p
 }
 
 func (s *permissionService) SetSkipRequests(skip bool) {
-	s.skip = skip
+	s.skip.Store(skip)
 }
 
 func (s *permissionService) SkipRequests() bool {
-	return s.skip
+	return s.skip.Load()
 }
 
-func NewPermissionService(workingDir string, skip bool, allowedTools []string) Service {
-	return &permissionService{
-		Broker:              pubsub.NewBroker[PermissionRequest](),
-		notificationBroker:  pubsub.NewBroker[PermissionNotification](),
-		workingDir:          workingDir,
-		sessionPermissions:  make([]PermissionRequest, 0),
-		autoApproveSessions: make(map[string]bool),
-		skip:                skip,
-		allowedTools:        allowedTools,
-		pendingRequests:     csync.NewMap[string, chan bool](),
+func NewPermissionService(workingDir string, skip bool, allowedTools []string, autoApproveWorkingDir bool) Service {
+	svc := &permissionService{
+		Broker:                pubsub.NewBroker[PermissionRequest](),
+		notificationBroker:    pubsub.NewBroker[PermissionNotification](),
+		workingDir:            workingDir,
+		sessionPermissions:    make([]PermissionRequest, 0),
+		autoApproveSessions:   make(map[string]bool),
+		allowedTools:          allowedTools,
+		autoApproveWorkingDir: autoApproveWorkingDir,
+		pendingRequests:       csync.NewMap[string, chan bool](),
 	}
+	svc.skip.Store(skip)
+	return svc
+}
+
+// isWithinDir reports whether dir is the same as or a subdirectory of parent.
+// It resolves symlinks before checking to prevent symlink-based escapes.
+// For non-existent paths (e.g. new files) it walks up to the nearest
+// existing ancestor and resolves from there.
+func isWithinDir(dir, parent string) bool {
+	resolvedDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		// Path doesn't exist yet — resolve closest existing ancestor.
+		cleaned := filepath.Clean(dir)
+		for {
+			ancestor := filepath.Dir(cleaned)
+			if ancestor == cleaned {
+				return false
+			}
+			if resolved, evalErr := filepath.EvalSymlinks(ancestor); evalErr == nil {
+				// Re-append the relative tail onto the resolved ancestor.
+				tail, _ := filepath.Rel(ancestor, filepath.Clean(dir))
+				resolvedDir = filepath.Join(resolved, tail)
+				break
+			}
+			cleaned = ancestor
+		}
+	}
+	resolvedParent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(resolvedParent, resolvedDir)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }

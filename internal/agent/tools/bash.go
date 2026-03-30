@@ -6,10 +6,10 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"html/template"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"text/template"
 	"time"
 
 	"charm.land/fantasy"
@@ -200,23 +200,11 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 			// Determine working directory
 			execWorkingDir := cmp.Or(params.WorkingDir, workingDir)
 
-			isSafeReadOnly := false
-			cmdLower := strings.ToLower(params.Command)
-
-			for _, safe := range safeCommands {
-				if strings.HasPrefix(cmdLower, safe) {
-					if len(cmdLower) == len(safe) || cmdLower[len(safe)] == ' ' || cmdLower[len(safe)] == '-' {
-						isSafeReadOnly = true
-						break
-					}
-				}
-			}
-
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
 				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for executing shell command")
 			}
-			if !isSafeReadOnly {
+			if !isSafeCommand(params.Command) {
 				p, err := permissions.Request(ctx,
 					permission.CreatePermissionRequest{
 						SessionID:   sessionID,
@@ -248,7 +236,12 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				}
 
 				// Wait a short time to detect fast failures (blocked commands, syntax errors, etc.)
-				time.Sleep(1 * time.Second)
+				select {
+				case <-time.After(1 * time.Second):
+				case <-ctx.Done():
+					bgManager.Kill(context.Background(), bgShell.ID)
+					return fantasy.ToolResponse{}, ctx.Err()
+				}
 				stdout, stderr, done, execErr := bgShell.GetOutput()
 
 				if done {
@@ -257,6 +250,7 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 
 					interrupted := shell.IsInterrupt(execErr)
 					exitCode := shell.ExitCode(execErr)
+
 					if exitCode == 0 && !interrupted && execErr != nil {
 						return fantasy.ToolResponse{}, fmt.Errorf("[Job %s] error executing command: %w", bgShell.ID, execErr)
 					}
@@ -279,6 +273,7 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				}
 
 				// Still running after fast-failure check - return as background job
+
 				metadata := BashResponseMetadata{
 					StartTime:        startTime.UnixMilli(),
 					EndTime:          time.Now().UnixMilli(),
@@ -326,9 +321,10 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 					stdout, stderr, done, execErr = bgShell.GetOutput()
 					break waitLoop
 				case <-ctx.Done():
-					// Incoming context was cancelled before we moved to background
-					// Kill the shell and return error
-					bgManager.Kill(bgShell.ID)
+					// Incoming context was cancelled before we moved to background.
+					// Kill the shell and return error. Use a background context
+					// since ctx is already cancelled.
+					bgManager.Kill(context.Background(), bgShell.ID)
 					return fantasy.ToolResponse{}, ctx.Err()
 				}
 			}
@@ -341,6 +337,7 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 
 				interrupted := shell.IsInterrupt(execErr)
 				exitCode := shell.ExitCode(execErr)
+
 				if exitCode == 0 && !interrupted && execErr != nil {
 					return fantasy.ToolResponse{}, fmt.Errorf("[Job %s] error executing command: %w", bgShell.ID, execErr)
 				}
@@ -415,11 +412,17 @@ func formatOutput(stdout, stderr string, execErr error) string {
 }
 
 func truncateOutput(content string) string {
-	if len(content) <= MaxOutputLength {
+	return TruncateString(content, MaxOutputLength)
+}
+
+// TruncateString truncates content to maxLen using middle truncation,
+// keeping the first and last halves with a truncation notice in between.
+func TruncateString(content string, maxLen int) string {
+	if len(content) <= maxLen {
 		return content
 	}
 
-	halfLength := MaxOutputLength / 2
+	halfLength := maxLen / 2
 	start := content[:halfLength]
 	end := content[len(content)-halfLength:]
 

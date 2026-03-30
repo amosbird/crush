@@ -24,13 +24,13 @@ Fast file pattern matching tool that finds files by name/pattern, returning path
 <limitations>
 - Results limited to 100 files (newest first)
 - Does not search file contents (use Grep for that)
-- Hidden files (starting with '.') skipped
 </limitations>
 
 <cross_platform>
 - Path separators handled automatically (/ and \ work)
 - Uses ripgrep (rg) if available, otherwise Go implementation
 - Patterns should use forward slashes (/) for compatibility
+- Hidden files (starting with '.') skipped by default
 </cross_platform>
 
 <tips>

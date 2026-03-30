@@ -1,4 +1,4 @@
-Creates and manages a structured task list for tracking progress on complex, multi-step coding tasks.
+Creates and manages a structured task list for tracking progress on complex, multi-step coding tasks. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user. It also helps the user understand the progress and overall status of their requests.
 
 <when_to_use>
 Use this tool proactively in these scenarios:
@@ -9,7 +9,7 @@ Use this tool proactively in these scenarios:
 - User provides multiple tasks (numbered or comma-separated list)
 - After receiving new instructions to capture requirements
 - When starting work on a task (mark as in_progress BEFORE beginning)
-- After completing a task (mark completed and add new follow-up tasks)
+- After completing a task (mark completed and add new follow-up tasks discovered during implementation)
 </when_to_use>
 
 <when_not_to_use>
@@ -20,6 +20,20 @@ Skip this tool when:
 - Task completable in less than 3 trivial steps
 - Purely conversational or informational request
 </when_not_to_use>
+
+<usage_examples>
+Example 1 — Multi-step feature:
+  User: "Add dark mode toggle to settings. Run tests when done!"
+  → Create todos: 1) Create toggle component, 2) Add state management, 3) Implement theme styles, 4) Update components for theme switching, 5) Run tests and build
+
+Example 2 — Scoped discovery then action:
+  User: "Rename getCwd to getCurrentWorkingDirectory across the project"
+  → First search to understand scope, THEN create todos for each file
+
+Example 3 — DON'T use:
+  User: "What does git status do?" → Just answer, no todo needed
+  User: "Add a comment to the calculateTotal function" → Single edit, no todo needed
+</usage_examples>
 
 <task_states>
 - **pending**: Task not yet started
@@ -60,31 +74,12 @@ If blocked:
 - Always provide both content and active_form
 </task_breakdown>
 
-<examples>
-✅ Good task:
-```json
-{
-  "content": "Implement user authentication with JWT tokens",
-  "status": "in_progress",
-  "active_form": "Implementing user authentication with JWT tokens"
-}
-```
-
-❌ Bad task (missing active_form):
-```json
-{
-  "content": "Fix bug",
-  "status": "pending"
-}
-```
-</examples>
-
 <output_behavior>
 **NEVER** print or list todos in your response text. The user sees the todo list in real-time in the UI.
 </output_behavior>
 
 <tips>
-- When in doubt, use this tool - being proactive demonstrates attentiveness
+- When in doubt, use this tool — being proactive demonstrates attentiveness
 - One task in_progress at a time keeps work focused
 - Update immediately after state changes for accurate tracking
 </tips>

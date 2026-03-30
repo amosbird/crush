@@ -17,10 +17,13 @@ Common shell builtins and core utils available on Windows.
 
 <usage_notes>
 - Command required, working_dir optional (defaults to current directory)
-- IMPORTANT: Use Grep/Glob/Agent tools instead of 'find'/'grep'. Use View/LS tools instead of 'cat'/'head'/'tail'/'ls'
-- Chain with ';' or '&&', avoid newlines except in quoted strings
+- IMPORTANT: Avoid using this tool to run find, grep, cat, head, tail, ls commands unless explicitly instructed or after verifying a dedicated tool cannot accomplish the task. Use Grep/Glob/Agent/View/LS tools instead — they provide a better experience
+- If commands are independent and can run in parallel, make multiple bash tool calls in a single message (e.g., git status and git diff as two parallel calls)
+- If commands depend on each other and must run sequentially, chain with '&&' in a single call
+- Avoid newlines in commands except in quoted strings
 - Each command runs in independent shell (no state persistence between calls)
 - Prefer absolute paths over 'cd' (use 'cd' only if user explicitly requests)
+- Quote file paths that contain spaces or special characters
 </usage_notes>
 
 <background_execution>
@@ -42,25 +45,32 @@ Common shell builtins and core utils available on Windows.
   * Short-lived scripts
 </background_execution>
 
-<git_commits>
-When user asks to create git commit:
+<git_safety>
+Git Safety Protocol:
+- NEVER update the git config
+- NEVER run destructive git commands (push --force, reset --hard, checkout ., restore ., clean -f, branch -D) unless the user explicitly requests these actions
+- NEVER skip hooks (--no-verify) or bypass signing (--no-gpg-sign) unless the user explicitly asks. If a hook fails, investigate and fix the underlying issue
+- NEVER force push to main/master — warn the user if they request it
+- CRITICAL: Always create NEW commits rather than amending, unless the user explicitly requests amend. When a pre-commit hook fails, the commit did NOT happen — so --amend would modify the PREVIOUS commit, destroying work. After hook failure, fix the issue, re-stage, and create a NEW commit
+- When staging files, prefer adding specific files by name rather than "git add -A" or "git add ." which can accidentally include sensitive files (.env, credentials) or large binaries
+- Before running destructive operations (e.g., git reset --hard, git push --force, git checkout --), consider whether there is a safer alternative. Only use destructive operations when truly the best approach
+</git_safety>
 
-1. Single message with three tool_use blocks (IMPORTANT for speed):
-   - git status (untracked files)
+<git_commits>
+Only create commits when requested by the user. If unclear, ask first.
+
+1. Single message with three tool_use blocks in parallel (IMPORTANT for speed):
+   - git status (untracked files — never use -uall flag on large repos)
    - git diff (staged/unstaged changes)
    - git log (recent commit message style)
 
-2. Add relevant untracked files to staging. Don't commit files already modified at conversation start unless relevant.
-
-3. Analyze staged changes in <commit_analysis> tags:
+2. Analyze all staged changes and draft a commit message:
    - List changed/added files, summarize nature (feature/enhancement/bug fix/refactoring/test/docs)
-   - Brainstorm purpose/motivation, assess project impact, check for sensitive info
-   - Don't use tools beyond git context
+   - Check for sensitive info (.env, credentials) — do not commit those, warn the user
    - Draft concise (1-2 sentences) message focusing on "why" not "what"
    - Use clear language, accurate reflection ("add"=new feature, "update"=enhancement, "fix"=bug fix)
-   - Avoid generic messages, review draft
 
-4. Create commit{{ if or (eq .Attribution.TrailerStyle "assisted-by") (eq .Attribution.TrailerStyle "co-authored-by")}} with attribution{{ end }} using HEREDOC:
+3. Stage relevant files by name (not "git add -A") and create commit{{ if or (eq .Attribution.TrailerStyle "assisted-by") (eq .Attribution.TrailerStyle "co-authored-by")}} with attribution{{ end }} using HEREDOC:
    git commit -m "$(cat <<'EOF'
    Commit message here.
 
@@ -78,9 +88,9 @@ When user asks to create git commit:
    EOF
    )"
 
-5. If pre-commit hook fails, retry ONCE. If fails again, hook preventing commit. If succeeds but files modified, MUST amend.
+4. If pre-commit hook fails, fix the issue and create a NEW commit (do NOT amend).
 
-6. Run git status to verify.
+5. Run git status to verify.
 
 Notes: Use "git commit -am" when possible, don't stage unrelated files, NEVER update config, don't push, no -i flags, no empty commits, return empty response.
 </git_commits>

@@ -143,16 +143,26 @@ func (m *BackgroundShellManager) Remove(id string) error {
 	return nil
 }
 
-// Kill terminates a background shell by ID.
-func (m *BackgroundShellManager) Kill(id string) error {
+// Kill terminates a background shell by ID. The provided context bounds
+// how long the function waits for the shell to exit after cancellation.
+func (m *BackgroundShellManager) Kill(ctx context.Context, id string) error {
 	shell, ok := m.shells.Take(id)
 	if !ok {
 		return fmt.Errorf("background shell not found: %s", id)
 	}
 
 	shell.cancel()
-	<-shell.done
-	return nil
+	select {
+	case <-shell.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	// Note: if ctx is cancelled, shell.cancel() was already called so the
+	// process will be terminated. The goroutine in Start() will close
+	// shell.done when ExecStream returns, which happens after the process
+	// exits. No additional cleanup is needed since the shell has already
+	// been removed from the manager via Take().
 }
 
 // BackgroundShellInfo contains information about a background shell.

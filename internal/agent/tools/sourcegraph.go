@@ -111,14 +111,16 @@ func NewSourcegraphTool(client *http.Client) fantasy.AgentTool {
 			defer resp.Body.Close()
 
 			if resp.StatusCode != http.StatusOK {
-				body, _ := io.ReadAll(resp.Body)
+				const maxErrBodySize = 1 << 20 // 1MB
+				body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBodySize))
 				if len(body) > 0 {
 					return fantasy.NewTextErrorResponse(fmt.Sprintf("Request failed with status code: %d, response: %s", resp.StatusCode, string(body))), nil
 				}
 
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Request failed with status code: %d", resp.StatusCode)), nil
 			}
-			body, err := io.ReadAll(resp.Body)
+			const maxResponseSize = 5 << 20 // 5MB
+			body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
 			if err != nil {
 				return fantasy.ToolResponse{}, fmt.Errorf("failed to read response body: %w", err)
 			}

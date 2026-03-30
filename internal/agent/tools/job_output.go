@@ -85,6 +85,7 @@ func NewJobOutputTool() fantasy.AgentTool {
 			}
 
 			result := fmt.Sprintf("Status: %s\n\n%s", status, output)
+			result = TruncateString(result, MaxOutputLength)
 			return fantasy.WithResponseMetadata(fantasy.NewTextResponse(result), metadata), nil
 		})
 }

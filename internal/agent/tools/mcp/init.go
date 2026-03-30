@@ -199,7 +199,9 @@ func Initialize(ctx context.Context, permissions permission.Service, cfg *config
 			}
 		}(name, m)
 	}
-	wg.Wait()
+	// Wait for all MCP clients to initialize, but respect the caller's
+	// context so shutdown or cancellation isn't blocked by a hung server.
+	csync.WaitWithContext(ctx, &wg)
 	initOnce.Do(func() { close(initDone) })
 }
 

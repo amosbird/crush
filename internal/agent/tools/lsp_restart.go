@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/lsp"
 )
 
@@ -63,7 +64,11 @@ func NewLSPRestartTool(lspManager *lsp.Manager) fantasy.AgentTool {
 				})
 			}
 
-			wg.Wait()
+			// Wait for restarts to finish, but respect the tool's context
+			// so user cancellation (ESC) isn't blocked.
+			if !csync.WaitWithContext(ctx, &wg) {
+				return fantasy.NewTextErrorResponse("LSP restart cancelled"), nil
+			}
 
 			var output string
 			if len(restarted) > 0 {

@@ -90,6 +90,14 @@ func NewShell(opts *Options) *Shell {
 		"AI_AGENT=crush",
 	)
 
+	// Prevent child processes (e.g. git) from opening interactive editors.
+	env = append(
+		env,
+		"GIT_EDITOR=:",
+		"GIT_MERGE_AUTOEDIT=no",
+		"GIT_PAGER=cat",
+	)
+
 	logger := opts.Logger
 	if logger == nil {
 		logger = noopLogger{}
@@ -227,13 +235,17 @@ func splitArgsFlags(parts []string) (args []string, flags []string) {
 }
 
 func (s *Shell) blockHandler() func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
+	// Snapshot blockFuncs while the caller holds s.mu, so the closure
+	// does not race with SetBlockFuncs.
+	blockFuncs := slices.Clone(s.blockFuncs)
+
 	return func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 		return func(ctx context.Context, args []string) error {
 			if len(args) == 0 {
 				return next(ctx, args)
 			}
 
-			for _, blockFunc := range s.blockFuncs {
+			for _, blockFunc := range blockFuncs {
 				if blockFunc(args) {
 					return fmt.Errorf("command is not allowed for security reasons: %q", args[0])
 				}

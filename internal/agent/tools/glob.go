@@ -7,10 +7,12 @@ import (
 	_ "embed"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"charm.land/fantasy"
 	"github.com/charmbracelet/crush/internal/fsext"
@@ -42,7 +44,10 @@ func NewGlobTool(workingDir string) fantasy.AgentTool {
 
 			searchPath := cmp.Or(params.Path, workingDir)
 
-			files, truncated, err := globFiles(ctx, params.Pattern, searchPath, 100)
+			globCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+
+			files, truncated, err := globFiles(globCtx, params.Pattern, searchPath, 100)
 			if err != nil {
 				return fantasy.ToolResponse{}, fmt.Errorf("error finding files: %w", err)
 			}
@@ -54,7 +59,7 @@ func NewGlobTool(workingDir string) fantasy.AgentTool {
 				normalizeFilePaths(files)
 				output = strings.Join(files, "\n")
 				if truncated {
-					output += "\n\n(Results are truncated. Consider using a more specific path or pattern.)"
+					output += "\n\n(Results truncated to 100 files. Use a more specific pattern or path to narrow results.)"
 				}
 			}
 
@@ -76,10 +81,13 @@ func globFiles(ctx context.Context, pattern, searchPath string, limit int) ([]st
 		if err == nil {
 			return matches, len(matches) >= limit && limit > 0, nil
 		}
+		if ctx.Err() != nil {
+			return nil, false, ctx.Err()
+		}
 		slog.Warn("Ripgrep execution failed, falling back to doublestar", "error", err)
 	}
 
-	return fsext.GlobGitignoreAware(pattern, searchPath, limit)
+	return fsext.GlobGitignoreAware(ctx, pattern, searchPath, limit)
 }
 
 func runRipgrep(cmd *exec.Cmd, searchRoot string, limit int) ([]string, error) {
@@ -91,7 +99,12 @@ func runRipgrep(cmd *exec.Cmd, searchRoot string, limit int) ([]string, error) {
 		return nil, fmt.Errorf("ripgrep: %w\n%s", err, out)
 	}
 
-	var matches []string
+	type fileEntry struct {
+		path    string
+		modTime time.Time
+	}
+
+	var entries []fileEntry
 	for p := range bytes.SplitSeq(out, []byte{0}) {
 		if len(p) == 0 {
 			continue
@@ -100,18 +113,24 @@ func runRipgrep(cmd *exec.Cmd, searchRoot string, limit int) ([]string, error) {
 		if !filepath.IsAbs(absPath) {
 			absPath = filepath.Join(searchRoot, absPath)
 		}
-		if fsext.SkipHidden(absPath) {
+		fi, err := os.Stat(absPath)
+		if err != nil {
 			continue
 		}
-		matches = append(matches, absPath)
+		entries = append(entries, fileEntry{path: absPath, modTime: fi.ModTime()})
 	}
 
-	sort.SliceStable(matches, func(i, j int) bool {
-		return len(matches[i]) < len(matches[j])
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].modTime.After(entries[j].modTime)
 	})
 
-	if limit > 0 && len(matches) > limit {
-		matches = matches[:limit]
+	if limit > 0 && len(entries) > limit {
+		entries = entries[:limit]
+	}
+
+	matches := make([]string, len(entries))
+	for i, e := range entries {
+		matches[i] = e.path
 	}
 	return matches, nil
 }

@@ -48,7 +48,7 @@ func NewReferencesTool(lspManager *lsp.Manager) fantasy.AgentTool {
 
 			workingDir := cmp.Or(params.Path, ".")
 
-			matches, _, err := searchFiles(ctx, regexp.QuoteMeta(params.Symbol), workingDir, "", 100)
+			matches, _, err := searchFiles(ctx, regexp.QuoteMeta(params.Symbol), workingDir, "", 0, 100)
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to search for symbol: %s", err)), nil
 			}

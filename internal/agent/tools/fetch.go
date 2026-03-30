@@ -18,7 +18,7 @@ import (
 
 const (
 	FetchToolName = "fetch"
-	MaxFetchSize  = 1 * 1024 * 1024 // 1MB
+	MaxFetchSize  = 200 * 1024 // 200KB
 )
 
 //go:embed fetch.md
@@ -52,29 +52,6 @@ func NewFetchTool(permissions permission.Service, workingDir string, client *htt
 
 			if !strings.HasPrefix(params.URL, "http://") && !strings.HasPrefix(params.URL, "https://") {
 				return fantasy.NewTextErrorResponse("URL must start with http:// or https://"), nil
-			}
-
-			sessionID := GetSessionFromContext(ctx)
-			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for creating a new file")
-			}
-
-			p, err := permissions.Request(ctx,
-				permission.CreatePermissionRequest{
-					SessionID:   sessionID,
-					Path:        workingDir,
-					ToolCallID:  call.ID,
-					ToolName:    FetchToolName,
-					Action:      "fetch",
-					Description: fmt.Sprintf("Fetch content from URL: %s", params.URL),
-					Params:      FetchPermissionsParams(params),
-				},
-			)
-			if err != nil {
-				return fantasy.ToolResponse{}, err
-			}
-			if !p {
-				return fantasy.ToolResponse{}, permission.ErrorPermissionDenied
 			}
 
 			// maxFetchTimeoutSeconds is the maximum allowed timeout for fetch requests (2 minutes)

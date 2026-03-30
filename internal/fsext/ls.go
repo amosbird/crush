@@ -1,6 +1,7 @@
 package fsext
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"os"
@@ -239,7 +240,7 @@ func (dl *directoryLister) shouldIgnore(path string, ignorePatterns []string, is
 }
 
 // ListDirectory lists files and directories in the specified path.
-func ListDirectory(initialPath string, ignorePatterns []string, depth, limit int) ([]string, bool, error) {
+func ListDirectory(ctx context.Context, initialPath string, ignorePatterns []string, depth, limit int) ([]string, bool, error) {
 	found := csync.NewSlice[string]()
 	dl := NewDirectoryLister(initialPath)
 
@@ -255,6 +256,10 @@ func ListDirectory(initialPath string, ignorePatterns []string, depth, limit int
 	err := fastwalk.Walk(&conf, initialPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil // Skip files we don't have permission to access
+		}
+
+		if ctx.Err() != nil {
+			return filepath.SkipAll
 		}
 
 		isDir := d.IsDir()

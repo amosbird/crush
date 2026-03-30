@@ -4,6 +4,7 @@ Edits files by replacing text, creating new files, or deleting content. For movi
 1. Use View tool to understand file contents and context
 2. For new files: Use LS tool to verify parent directory exists
 3. **CRITICAL**: Note exact whitespace, indentation, and formatting from View output
+4. ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
 </prerequisites>
 
 <parameters>
@@ -92,6 +93,7 @@ If you get "old_string not found in file":
 - Don't leave code in broken state
 - Use absolute file paths (starting with /)
 - Use forward slashes (/) for cross-platform compatibility
+- Use `replace_all` for replacing and renaming strings across the file (e.g., renaming a variable)
 - Multiple edits to same file: send all in single message with multiple tool calls
 - **When in doubt, include MORE context rather than less**
 - Match the existing code style exactly (spaces, tabs, blank lines)

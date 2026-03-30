@@ -38,14 +38,19 @@ func newRegexCache() *regexCache {
 
 // get retrieves a compiled regex from cache or compiles and caches it
 func (rc *regexCache) get(pattern string) (*regexp.Regexp, error) {
-	var rerr error
-	return rc.GetOrSet(pattern, func() *regexp.Regexp {
-		regex, err := regexp.Compile(pattern)
-		if err != nil {
-			rerr = err
+	if cached, ok := rc.Get(pattern); ok {
+		if cached == nil {
+			return nil, fmt.Errorf("previously failed to compile %q", pattern)
 		}
-		return regex
-	}), rerr
+		return cached, nil
+	}
+	regex, err := regexp.Compile(pattern)
+	if err != nil {
+		rc.Set(pattern, nil)
+		return nil, err
+	}
+	rc.Set(pattern, regex)
+	return regex, nil
 }
 
 // ResetCache clears compiled regex caches to prevent unbounded growth across sessions.
@@ -67,14 +72,16 @@ type GrepParams struct {
 	Path        string `json:"path,omitempty" description:"The directory to search in. Defaults to the current working directory."`
 	Include     string `json:"include,omitempty" description:"File pattern to include in the search (e.g. \"*.js\", \"*.{ts,tsx}\")"`
 	LiteralText bool   `json:"literal_text,omitempty" description:"If true, the pattern will be treated as literal text with special regex characters escaped. Default is false."`
+	Context     int    `json:"context,omitempty" description:"Number of context lines to show before and after each match (0-5). Only works with ripgrep."`
 }
 
 type grepMatch struct {
-	path     string
-	modTime  time.Time
-	lineNum  int
-	charNum  int
-	lineText string
+	path      string
+	modTime   time.Time
+	lineNum   int
+	charNum   int
+	lineText  string
+	isContext bool
 }
 
 type GrepResponseMetadata struct {
@@ -121,16 +128,22 @@ func NewGrepTool(workingDir string, config config.ToolGrep) fantasy.AgentTool {
 			searchCtx, cancel := context.WithTimeout(ctx, config.GetTimeout())
 			defer cancel()
 
-			matches, truncated, err := searchFiles(searchCtx, searchPattern, searchPath, params.Include, 100)
+			matches, truncated, err := searchFiles(searchCtx, searchPattern, searchPath, params.Include, params.Context, 100)
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("error searching files: %v", err)), nil
 			}
 
 			var output strings.Builder
+			var matchCount int
 			if len(matches) == 0 {
 				output.WriteString("No files found")
 			} else {
-				fmt.Fprintf(&output, "Found %d matches\n", len(matches))
+				for _, m := range matches {
+					if !m.isContext {
+						matchCount++
+					}
+				}
+				fmt.Fprintf(&output, "Found %d matches\n", matchCount)
 
 				currentFile := ""
 				for _, match := range matches {
@@ -140,6 +153,14 @@ func NewGrepTool(workingDir string, config config.ToolGrep) fantasy.AgentTool {
 						}
 						currentFile = match.path
 						fmt.Fprintf(&output, "%s:\n", filepath.ToSlash(match.path))
+					}
+					if match.isContext {
+						lineText := match.lineText
+						if len(lineText) > maxGrepContentWidth {
+							lineText = lineText[:maxGrepContentWidth] + "..."
+						}
+						fmt.Fprintf(&output, "  %d: %s\n", match.lineNum, lineText)
+						continue
 					}
 					if match.lineNum > 0 {
 						lineText := match.lineText
@@ -157,43 +178,59 @@ func NewGrepTool(workingDir string, config config.ToolGrep) fantasy.AgentTool {
 				}
 
 				if truncated {
-					output.WriteString("\n(Results are truncated. Consider using a more specific path or pattern.)")
+					output.WriteString("\n(Results truncated to 100 matches. Narrow your search with a more specific pattern, path, or include filter. Use the Agent tool to delegate deeper searches.)")
 				}
 			}
 
 			return fantasy.WithResponseMetadata(
 				fantasy.NewTextResponse(output.String()),
 				GrepResponseMetadata{
-					NumberOfMatches: len(matches),
+					NumberOfMatches: matchCount,
 					Truncated:       truncated,
 				},
 			), nil
 		})
 }
 
-func searchFiles(ctx context.Context, pattern, rootPath, include string, limit int) ([]grepMatch, bool, error) {
-	matches, err := searchWithRipgrep(ctx, pattern, rootPath, include)
+func searchFiles(ctx context.Context, pattern, rootPath, include string, contextLines, limit int) ([]grepMatch, bool, error) {
+	if contextLines > 5 {
+		contextLines = 5
+	}
+	matches, err := searchWithRipgrep(ctx, pattern, rootPath, include, contextLines)
 	if err != nil {
-		matches, err = searchFilesWithRegex(pattern, rootPath, include)
+		if ctx.Err() != nil {
+			return nil, false, ctx.Err()
+		}
+		matches, err = searchFilesWithRegex(ctx, pattern, rootPath, include)
 		if err != nil {
 			return nil, false, err
 		}
 	}
 
-	sort.Slice(matches, func(i, j int) bool {
+	sort.SliceStable(matches, func(i, j int) bool {
 		return matches[i].modTime.After(matches[j].modTime)
 	})
 
-	truncated := len(matches) > limit
-	if truncated {
-		matches = matches[:limit]
+	// Truncate by match count (not including context lines).
+	var matchCount int
+	var truncated bool
+	for i, m := range matches {
+		if m.isContext {
+			continue
+		}
+		matchCount++
+		if matchCount > limit {
+			matches = matches[:i]
+			truncated = true
+			break
+		}
 	}
 
 	return matches, truncated, nil
 }
 
-func searchWithRipgrep(ctx context.Context, pattern, path, include string) ([]grepMatch, error) {
-	cmd := getRgSearchCmd(ctx, pattern, path, include)
+func searchWithRipgrep(ctx context.Context, pattern, path, include string, contextLines int) ([]grepMatch, error) {
+	cmd := getRgSearchCmd(ctx, pattern, path, include, contextLines)
 	if cmd == nil {
 		return nil, fmt.Errorf("ripgrep not found in $PATH")
 	}
@@ -215,6 +252,18 @@ func searchWithRipgrep(ctx context.Context, pattern, path, include string) ([]gr
 	}
 
 	var matches []grepMatch
+	modTimeCache := make(map[string]time.Time)
+	fileModTime := func(path string) time.Time {
+		if t, ok := modTimeCache[path]; ok {
+			return t
+		}
+		fi, err := os.Stat(path)
+		if err != nil {
+			return time.Time{}
+		}
+		modTimeCache[path] = fi.ModTime()
+		return fi.ModTime()
+	}
 	for line := range bytes.SplitSeq(bytes.TrimSpace(output), []byte{'\n'}) {
 		if len(line) == 0 {
 			continue
@@ -223,23 +272,32 @@ func searchWithRipgrep(ctx context.Context, pattern, path, include string) ([]gr
 		if err := json.Unmarshal(line, &match); err != nil {
 			continue
 		}
-		if match.Type != "match" {
-			continue
-		}
-		for _, m := range match.Data.Submatches {
-			fi, err := os.Stat(match.Data.Path.Text)
-			if err != nil {
-				continue // Skip files we can't access
+		switch match.Type {
+		case "match":
+			for _, m := range match.Data.Submatches {
+				mt := fileModTime(match.Data.Path.Text)
+				if mt.IsZero() {
+					continue
+				}
+				matches = append(matches, grepMatch{
+					path:     match.Data.Path.Text,
+					modTime:  mt,
+					lineNum:  match.Data.LineNumber,
+					charNum:  m.Start + 1,
+					lineText: strings.TrimSpace(match.Data.Lines.Text),
+				})
+				break
 			}
-			matches = append(matches, grepMatch{
-				path:     match.Data.Path.Text,
-				modTime:  fi.ModTime(),
-				lineNum:  match.Data.LineNumber,
-				charNum:  m.Start + 1, // ensure 1-based
-				lineText: strings.TrimSpace(match.Data.Lines.Text),
-			})
-			// only get the first match of each line
-			break
+		case "context":
+			if contextLines > 0 {
+				matches = append(matches, grepMatch{
+					path:      match.Data.Path.Text,
+					modTime:   fileModTime(match.Data.Path.Text),
+					lineNum:   match.Data.LineNumber,
+					lineText:  strings.TrimSpace(match.Data.Lines.Text),
+					isContext: true,
+				})
+			}
 		}
 	}
 	return matches, nil
@@ -261,7 +319,7 @@ type ripgrepMatch struct {
 	} `json:"data"`
 }
 
-func searchFilesWithRegex(pattern, rootPath, include string) ([]grepMatch, error) {
+func searchFilesWithRegex(ctx context.Context, pattern, rootPath, include string) ([]grepMatch, error) {
 	matches := []grepMatch{}
 
 	// Use cached regex compilation
@@ -285,6 +343,10 @@ func searchFilesWithRegex(pattern, rootPath, include string) ([]grepMatch, error
 	err = filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // Skip errors
+		}
+
+		if ctx.Err() != nil {
+			return filepath.SkipAll
 		}
 
 		if info.IsDir() {

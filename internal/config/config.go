@@ -155,6 +155,9 @@ func (c *ProviderConfig) ToProvider() catwalk.Provider {
 }
 
 func (c *ProviderConfig) SetupGitHubCopilot() {
+	if c.ExtraHeaders == nil {
+		c.ExtraHeaders = make(map[string]string)
+	}
 	maps.Copy(c.ExtraHeaders, copilot.Headers())
 }
 
@@ -213,8 +216,9 @@ func (c Completions) Limits() (depth, items int) {
 }
 
 type Permissions struct {
-	AllowedTools []string `json:"allowed_tools,omitempty" jsonschema:"description=List of tools that don't require permission prompts,example=bash,example=view"` // Tools that don't require permission prompts
-	SkipRequests bool     `json:"-"`                                                                                                                              // Automatically accept all permissions (YOLO mode)
+	AllowedTools          []string `json:"allowed_tools,omitempty" jsonschema:"description=List of tools that don't require permission prompts,example=bash,example=view"`        // Tools that don't require permission prompts
+	SkipRequests          bool     `json:"-"`                                                                                                                                     // Automatically accept all permissions (YOLO mode)
+	AutoApproveWorkingDir bool     `json:"auto_approve_working_dir,omitempty" jsonschema:"description=Auto-approve tool calls that operate within the current working directory"` // Auto-approve ops inside the working directory
 }
 
 type TrailerStyle string
@@ -257,6 +261,7 @@ type Options struct {
 	AutoLSP                   *bool        `json:"auto_lsp,omitempty" jsonschema:"description=Automatically setup LSPs based on root markers,default=true"`
 	Progress                  *bool        `json:"progress,omitempty" jsonschema:"description=Show indeterminate progress updates during long operations,default=true"`
 	DisableNotifications      bool         `json:"disable_notifications,omitempty" jsonschema:"description=Disable desktop notifications,default=false"`
+	AutoTitle                 bool         `json:"auto_title,omitempty" jsonschema:"description=Automatically update session title on every conversation turn using the small model,default=false"`
 }
 
 type MCPs map[string]MCPConfig
@@ -311,15 +316,17 @@ func (m MCPConfig) ResolvedEnv() []string {
 
 func (m MCPConfig) ResolvedHeaders() map[string]string {
 	resolver := NewShellVariableResolver(env.New())
+	resolved := make(map[string]string, len(m.Headers))
 	for e, v := range m.Headers {
 		var err error
-		m.Headers[e], err = resolver.ResolveValue(v)
+		resolved[e], err = resolver.ResolveValue(v)
 		if err != nil {
 			slog.Error("Error resolving header variable", "error", err, "variable", e, "value", v)
+			resolved[e] = v
 			continue
 		}
 	}
-	return m.Headers
+	return resolved
 }
 
 type Agent struct {
@@ -366,7 +373,7 @@ type ToolGrep struct {
 
 // GetTimeout returns the user-defined timeout or the default.
 func (t ToolGrep) GetTimeout() time.Duration {
-	return ptrValOr(t.Timeout, 5*time.Second)
+	return ptrValOr(t.Timeout, 30*time.Second)
 }
 
 // Config holds the configuration for crush.
@@ -461,6 +468,7 @@ const maxRecentModelsPerType = 5
 func allToolNames() []string {
 	return []string{
 		"agent",
+		"ask_user",
 		"bash",
 		"job_output",
 		"job_kill",
@@ -475,12 +483,16 @@ func allToolNames() []string {
 		"glob",
 		"grep",
 		"ls",
+		"plan_mode",
 		"sourcegraph",
 		"todos",
 		"view",
 		"write",
+		"web_search",
+		"diff",
 		"list_mcp_resources",
 		"read_mcp_resource",
+		"memory_search",
 	}
 }
 
@@ -493,7 +505,7 @@ func resolveAllowedTools(allTools []string, disabledTools []string) []string {
 }
 
 func resolveReadOnlyTools(tools []string) []string {
-	readOnlyTools := []string{"glob", "grep", "ls", "sourcegraph", "view"}
+	readOnlyTools := []string{"diff", "glob", "grep", "ls", "sourcegraph", "view", "web_search"}
 	// filter to only include tools that are in allowedtools (include mode)
 	return filterSlice(tools, readOnlyTools, true)
 }
@@ -637,18 +649,14 @@ func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {
 
 func resolveEnvs(envs map[string]string) []string {
 	resolver := NewShellVariableResolver(env.New())
-	for e, v := range envs {
-		var err error
-		envs[e], err = resolver.ResolveValue(v)
-		if err != nil {
-			slog.Error("Error resolving environment variable", "error", err, "variable", e, "value", v)
-			continue
-		}
-	}
-
 	res := make([]string, 0, len(envs))
 	for k, v := range envs {
-		res = append(res, fmt.Sprintf("%s=%s", k, v))
+		resolved, err := resolver.ResolveValue(v)
+		if err != nil {
+			slog.Error("Error resolving environment variable", "error", err, "variable", k, "value", v)
+			resolved = v
+		}
+		res = append(res, fmt.Sprintf("%s=%s", k, resolved))
 	}
 	return res
 }

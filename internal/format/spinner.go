@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/crush/internal/ui/anim"
@@ -72,5 +73,8 @@ func (s *Spinner) Start() {
 // Stop ends the spinner animation
 func (s *Spinner) Stop() {
 	s.prog.Quit()
-	<-s.done
+	select {
+	case <-s.done:
+	case <-time.After(5 * time.Second):
+	}
 }

@@ -29,6 +29,7 @@ type Manager struct {
 	cfg      *config.ConfigStore
 	manager  *powernapconfig.Manager
 	callback func(name string, client *Client)
+	autoLSP  *bool
 }
 
 // NewManager creates a new LSP manager service.
@@ -63,12 +64,19 @@ func NewManager(cfg *config.ConfigStore) *Manager {
 		cfg:      cfg,
 		manager:  manager,
 		callback: func(string, *Client) {}, // default no-op callback
+		autoLSP:  cfg.Config().Options.AutoLSP,
 	}
 }
 
 // Clients returns the map of LSP clients.
 func (s *Manager) Clients() *csync.Map[string, *Client] {
 	return s.clients
+}
+
+// AutoLSPEnabled reports whether auto-start for LSP servers is enabled.
+// Returns true when auto_lsp is nil (default) or explicitly true.
+func (s *Manager) AutoLSPEnabled() bool {
+	return s.autoLSP == nil || *s.autoLSP
 }
 
 // SetCallback sets a callback that is invoked when a new LSP
@@ -105,7 +113,8 @@ func (s *Manager) Start(ctx context.Context, path string) {
 			s.startServer(ctx, name, path, server)
 		})
 	}
-	wg.Wait()
+
+	csync.WaitWithContext(ctx, &wg)
 }
 
 // skipAutoStartCommands contains commands that are too generic or ambiguous to
@@ -141,12 +150,9 @@ var skipAutoStartCommands = map[string]bool{
 }
 
 func (s *Manager) startServer(ctx context.Context, name, filepath string, server *powernapconfig.ServerConfig) {
-	var (
-		isUserConfigured = s.isUserConfigured(name)
-		autoLSP          = s.cfg.Config().Options.AutoLSP
-	)
-	if !isUserConfigured && autoLSP != nil && !*autoLSP {
-		slog.Debug("Auto-start LSP disabled", "name", name)
+	isUserConfigured := s.isUserConfigured(name)
+	if !isUserConfigured && s.autoLSP != nil && !*s.autoLSP {
+		slog.Info("Auto-start LSP disabled, skipping", "name", name)
 		return
 	}
 
@@ -332,7 +338,7 @@ func handles(server *powernapconfig.ServerConfig, filePath, workDir string) bool
 // the server to exit gracefully, but it can lead to data loss if the server is
 // in the middle of writing something.
 // Generally it doesn't matter when shutting down Crush, though.
-func (s *Manager) KillAll(context.Context) {
+func (s *Manager) KillAll(ctx context.Context) {
 	var wg sync.WaitGroup
 	for name, client := range s.clients.Seq2() {
 		wg.Go(func() {
@@ -343,7 +349,8 @@ func (s *Manager) KillAll(context.Context) {
 			slog.Debug("Killed LSP client", "name", name)
 		})
 	}
-	wg.Wait()
+
+	csync.WaitWithContext(ctx, &wg)
 }
 
 // StopAll stops all running LSP clients and clears the client map.
@@ -364,5 +371,6 @@ func (s *Manager) StopAll(ctx context.Context) {
 			slog.Debug("Stopped LSP client", "name", name)
 		})
 	}
-	wg.Wait()
+
+	csync.WaitWithContext(ctx, &wg)
 }

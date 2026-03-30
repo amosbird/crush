@@ -5,6 +5,7 @@ Fast content search tool that finds files containing specific text/patterns, ret
 - Set literal_text=true for exact text with special characters (recommended for non-regex users)
 - Optional starting directory (defaults to current working directory)
 - Optional include pattern to filter which files to search
+- Optional context lines (0-5) to show surrounding code for each match
 - Results sorted with most recently modified files first
 </usage>
 
@@ -23,16 +24,18 @@ When literal_text=false (supports standard regex):
 </include_patterns>
 
 <limitations>
-- Results limited to 100 files (newest first)
+- Results limited to 100 matches (newest files first)
+- Max 5 matches per file to ensure broad coverage across files
 - Performance depends on number of files searched
 - Very large binary files may be skipped
-- Hidden files (starting with '.') skipped
+- Context lines only work when ripgrep is available
 </limitations>
 
 <ignore_support>
 - Respects .gitignore patterns to skip ignored files/directories
 - Respects .crushignore patterns for additional ignore rules
 - Both ignore files auto-detected in search root directory
+- Hidden files (starting with '.') skipped by default
 </ignore_support>
 
 <cross_platform>
@@ -46,4 +49,6 @@ When literal_text=false (supports standard regex):
 - For iterative exploration requiring multiple searches, consider Agent tool
 - Check if results truncated and refine search pattern if needed
 - Use literal_text=true for exact text with special characters (dots, parentheses, etc.)
+- Use context=2 or context=3 when you need to understand surrounding code without a separate View call
+- Use include pattern to narrow by file type: include="*.go" or include="*.{ts,tsx}"
 </tips>
