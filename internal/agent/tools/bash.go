@@ -232,7 +232,7 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				// Use background context so it continues after tool returns
 				bgShell, err := bgManager.Start(context.Background(), execWorkingDir, blockFuncs(), params.Command, params.Description)
 				if err != nil {
-					return fantasy.ToolResponse{}, fmt.Errorf("error starting background shell: %w", err)
+					return fantasy.NewTextErrorResponse(fmt.Sprintf("error starting background shell: %s", err)), nil
 				}
 
 				// Wait a short time to detect fast failures (blocked commands, syntax errors, etc.)
@@ -252,7 +252,7 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 					exitCode := shell.ExitCode(execErr)
 
 					if exitCode == 0 && !interrupted && execErr != nil {
-						return fantasy.ToolResponse{}, fmt.Errorf("[Job %s] error executing command: %w", bgShell.ID, execErr)
+						return fantasy.NewTextErrorResponse(fmt.Sprintf("[Job %s] error executing command: %s", bgShell.ID, execErr)), nil
 					}
 
 					stdout = formatOutput(stdout, stderr, execErr)
@@ -294,7 +294,7 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 			bgManager.Cleanup()
 			bgShell, err := bgManager.Start(context.Background(), execWorkingDir, blockFuncs(), params.Command, params.Description)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error starting shell: %w", err)
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("error starting shell: %s", err)), nil
 			}
 
 			// Wait for either completion, auto-background threshold, or context cancellation
@@ -339,7 +339,7 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				exitCode := shell.ExitCode(execErr)
 
 				if exitCode == 0 && !interrupted && execErr != nil {
-					return fantasy.ToolResponse{}, fmt.Errorf("[Job %s] error executing command: %w", bgShell.ID, execErr)
+					return fantasy.NewTextErrorResponse(fmt.Sprintf("[Job %s] error executing command: %s", bgShell.ID, execErr)), nil
 				}
 
 				stdout = formatOutput(stdout, stderr, execErr)

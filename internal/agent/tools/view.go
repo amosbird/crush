@@ -80,12 +80,12 @@ func NewViewTool(
 			// Check if file is outside working directory and request permission if needed
 			absWorkingDir, err := filepath.Abs(workingDir)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error resolving working directory: %w", err)
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("error resolving working directory: %s", err)), nil
 			}
 
 			absFilePath, err := filepath.Abs(filePath)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error resolving file path: %w", err)
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("error resolving file path: %s", err)), nil
 			}
 
 			relPath, err := filepath.Rel(absWorkingDir, absFilePath)
@@ -147,7 +147,7 @@ func NewViewTool(
 
 					return fantasy.NewTextErrorResponse(fmt.Sprintf("File not found: %s", filePath)), nil
 				}
-				return fantasy.ToolResponse{}, fmt.Errorf("error accessing file: %w", err)
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("error accessing file: %s", err)), nil
 			}
 
 			// Check if it's a directory
@@ -183,7 +183,7 @@ func NewViewTool(
 
 				imageData, readErr := os.ReadFile(filePath)
 				if readErr != nil {
-					return fantasy.ToolResponse{}, fmt.Errorf("error reading image file: %w", readErr)
+					return fantasy.NewTextErrorResponse(fmt.Sprintf("error reading image file: %s", readErr)), nil
 				}
 
 				encoded := base64.StdEncoding.EncodeToString(imageData)
@@ -193,7 +193,7 @@ func NewViewTool(
 			// Read the file content
 			content, hasMore, err := readTextFile(filePath, params.Offset, params.Limit)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error reading file: %w", err)
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("error reading file: %s", err)), nil
 			}
 			if !utf8.ValidString(content) {
 				return fantasy.NewTextErrorResponse("File content is not valid UTF-8"), nil

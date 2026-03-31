@@ -58,7 +58,7 @@ func NewTodosTool(sessions session.Service) fantasy.AgentTool {
 				switch item.Status {
 				case "pending", "in_progress", "completed":
 				default:
-					return fantasy.ToolResponse{}, fmt.Errorf("invalid status %q for todo %q", item.Status, item.Content)
+					return fantasy.NewTextErrorResponse(fmt.Sprintf("invalid status %q for todo %q", item.Status, item.Content)), nil
 				}
 			}
 
@@ -98,7 +98,7 @@ func NewTodosTool(sessions session.Service) fantasy.AgentTool {
 			currentSession.Todos = todos
 			_, err = sessions.Save(ctx, currentSession)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to save todos: %w", err)
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to save todos: %s", err)), nil
 			}
 
 			response := "Todo list updated successfully.\n\n"

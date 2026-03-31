@@ -80,14 +80,14 @@ func NewDownloadTool(permissions permission.Service, workingDir string, client *
 
 			req, err := http.NewRequestWithContext(requestCtx, "GET", params.URL, nil)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to create request: %w", err)
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to create request: %s", err)), nil
 			}
 
 			req.Header.Set("User-Agent", "crush/1.0")
 
 			resp, err := client.Do(req)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to download from URL: %w", err)
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to download from URL: %s", err)), nil
 			}
 			defer resp.Body.Close()
 
@@ -97,13 +97,13 @@ func NewDownloadTool(permissions permission.Service, workingDir string, client *
 
 			// Create parent directories if they don't exist
 			if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to create parent directories: %w", err)
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to create parent directories: %s", err)), nil
 			}
 
 			// Create the output file
 			outFile, err := os.Create(filePath)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to create output file: %w", err)
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to create output file: %s", err)), nil
 			}
 			defer outFile.Close()
 
@@ -114,7 +114,7 @@ func NewDownloadTool(permissions permission.Service, workingDir string, client *
 			if err != nil {
 				outFile.Close()
 				os.Remove(filePath)
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to write file: %w", err)
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to write file: %s", err)), nil
 			}
 
 			contentType := resp.Header.Get("Content-Type")

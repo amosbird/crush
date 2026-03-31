@@ -70,14 +70,14 @@ func NewFetchTool(permissions permission.Service, workingDir string, client *htt
 
 			req, err := http.NewRequestWithContext(requestCtx, "GET", params.URL, nil)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to create request: %w", err)
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to create request: %s", err)), nil
 			}
 
 			req.Header.Set("User-Agent", "crush/1.0")
 
 			resp, err := client.Do(req)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to fetch URL: %w", err)
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to fetch URL: %s", err)), nil
 			}
 			defer resp.Body.Close()
 
