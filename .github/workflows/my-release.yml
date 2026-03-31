@@ -1,0 +1,33 @@
+name: My Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOEXPERIMENT: greenteagc
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          go build -trimpath -ldflags "-s -w -X github.com/charmbracelet/crush/internal/version.Version=${VERSION}" -o crush .
+          tar czf crush-linux-amd64.tar.gz crush
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ github.ref_name }}" crush-linux-amd64.tar.gz --generate-notes
