@@ -88,6 +88,10 @@ internal/
 - **Modernize**: `task modernize` (runs `modernize` which makes code
   simplifications)
 - **Dev**: `task dev` (runs with profiling enabled)
+- **Deploy**: After every successful build, rebuild the binary with
+  `CGO_ENABLED=0 GOEXPERIMENT=greenteagc go build -o crush .` in the project
+  root. The wrapper script at `~/scripts/crush` exec's
+  `~/git/crush/crush`, so this replaces the running binary.
 
 ## Code Style Guidelines
 

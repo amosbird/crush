@@ -663,15 +663,20 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 		return ErrSessionBusy
 	}
 
+	genCtx, cancel := context.WithCancel(ctx)
+	a.activeRequests.Set(sessionID, cancel)
+	defer a.activeRequests.Del(sessionID)
+	defer cancel()
+
 	// Copy mutable fields under lock to avoid races with SetModels.
 	summaryModel := a.SummaryModel()
 	systemPromptPrefix := a.systemPromptPrefix.Get()
 
-	currentSession, err := a.sessions.Get(ctx, sessionID)
+	currentSession, err := a.sessions.Get(genCtx, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to get session: %w", err)
 	}
-	msgs, err := a.getSessionMessages(ctx, currentSession)
+	msgs, err := a.getSessionMessages(genCtx, currentSession)
 	if err != nil {
 		return err
 	}
@@ -680,16 +685,11 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 		return nil
 	}
 
-	if err := a.saveTranscript(ctx, sessionID); err != nil {
+	if err := a.saveTranscript(genCtx, sessionID); err != nil {
 		slog.Warn("failed to save transcript", "error", err)
 	}
 
 	aiMsgs, _ := a.preparePrompt(msgs)
-
-	genCtx, cancel := context.WithCancel(ctx)
-	a.activeRequests.Set(sessionID, cancel)
-	defer a.activeRequests.Del(sessionID)
-	defer cancel()
 
 	agent := fantasy.NewAgent(summaryModel.Model,
 		fantasy.WithSystemPrompt(string(summaryPrompt)),
@@ -744,6 +744,9 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 			deleteErr := a.messages.Delete(ctx, summaryMessage.ID)
 			return deleteErr
 		}
+		// Mark the message as finished so the spinner stops.
+		summaryMessage.AddFinish(message.FinishReasonError, "", err.Error())
+		_ = a.messages.Update(ctx, summaryMessage)
 		return err
 	}
 
@@ -777,7 +780,14 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 	currentSession.CompletionTokens = usage.OutputTokens
 	currentSession.PromptTokens = 0
 	_, err = a.sessions.Save(ctx, currentSession)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Update the session title based on the summarized conversation.
+	go a.generateTitle(ctx, sessionID, msgs, "")
+
+	return nil
 }
 
 func (a *sessionAgent) getCacheControlOptions() fantasy.ProviderOptions {
