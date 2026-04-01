@@ -39,6 +39,13 @@ type ImagePreviewMsg struct {
 	Attachment message.Attachment
 }
 
+// TextPreviewMsg is sent when a user clicks on a text attachment to request
+// a text preview dialog.
+type TextPreviewMsg struct {
+	Title string
+	Text  string
+}
+
 // Chat represents the chat UI model that handles chat interactions and
 // messages.
 type Chat struct {
@@ -741,11 +748,16 @@ func (m *Chat) HandleDelayedClick(msg DelayedClickMsg) (bool, tea.Cmd) {
 			m.ScrollToBottom()
 		}
 
-		// Check if the item wants to open an image preview.
+		// Check if the item wants to open a preview.
 		if handled {
 			if previewable, ok := selectedItem.(chat.ImagePreviewable); ok {
 				if att := previewable.PendingImagePreview(); att != nil {
 					return true, func() tea.Msg { return ImagePreviewMsg{Attachment: *att} }
+				}
+			}
+			if previewable, ok := selectedItem.(chat.TextPreviewable); ok {
+				if tp := previewable.PendingTextPreview(); tp != nil {
+					return true, func() tea.Msg { return TextPreviewMsg{Title: tp.Title, Text: tp.Text} }
 				}
 			}
 		}

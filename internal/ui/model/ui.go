@@ -778,6 +778,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.openImagePreviewDialog(msg.Attachment); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case TextPreviewMsg:
+		m.openTextPreviewDialog(msg.Title, msg.Text)
 	case tea.MouseClickMsg:
 		// Pass mouse events to dialogs first if any are open.
 		if m.dialog.HasDialogs() {
@@ -799,11 +801,17 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.attachments.HandleClick(relX) {
 					return m, tea.Batch(cmds...)
 				}
-				if att := m.attachments.AttachmentAt(relX); att != nil && strings.HasPrefix(att.MimeType, "image/") {
-					if cmd := m.openImagePreviewDialog(*att); cmd != nil {
-						cmds = append(cmds, cmd)
+				if att := m.attachments.AttachmentAt(relX); att != nil {
+					if strings.HasPrefix(att.MimeType, "image/") {
+						if cmd := m.openImagePreviewDialog(*att); cmd != nil {
+							cmds = append(cmds, cmd)
+						}
+						return m, tea.Batch(cmds...)
 					}
-					return m, tea.Batch(cmds...)
+					if strings.HasPrefix(att.MimeType, "text/") || strings.HasSuffix(att.FileName, ".txt") {
+						m.openTextPreviewDialog(att.FileName, string(att.Content))
+						return m, tea.Batch(cmds...)
+					}
 				}
 			}
 		}
@@ -1875,7 +1883,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				if cmd := m.newSession(); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
-		case key.Matches(msg, m.keyMap.Tab):
+			case key.Matches(msg, m.keyMap.Tab):
 				break
 			case msg.Keystroke() == "alt+shift+e":
 				if m.isAgentBusy() {
@@ -3210,6 +3218,13 @@ func (m *UI) openImagePreviewDialog(att message.Attachment) tea.Cmd {
 	d, cmd := dialog.NewImagePreview(m.com, att, &m.caps)
 	m.dialog.OpenDialog(d)
 	return cmd
+}
+
+// openTextPreviewDialog opens the text preview dialog with the given content.
+func (m *UI) openTextPreviewDialog(title, text string) {
+	m.dialog.CloseDialog(dialog.TextPreviewID)
+	d := dialog.NewTextPreview(m.com, title, text)
+	m.dialog.OpenDialog(d)
 }
 
 // openModelsDialog opens the models dialog.

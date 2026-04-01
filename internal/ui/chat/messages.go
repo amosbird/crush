@@ -51,6 +51,18 @@ type ImagePreviewable interface {
 	PendingImagePreview() *message.Attachment
 }
 
+// TextPreviewContent holds text content for preview.
+type TextPreviewContent struct {
+	Title string
+	Text  string
+}
+
+// TextPreviewable represents an item that can provide text content for
+// preview after a mouse click.
+type TextPreviewable interface {
+	PendingTextPreview() *TextPreviewContent
+}
+
 // KeyEventHandler is an interface for items that can handle key events.
 type KeyEventHandler interface {
 	HandleKeyEvent(key tea.KeyMsg) (bool, tea.Cmd)

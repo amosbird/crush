@@ -19,10 +19,11 @@ type UserMessageItem struct {
 	*cachedMessageItem
 	*focusableMessageItem
 
-	attachments    *attachments.Renderer
-	message        *message.Message
-	sty            *styles.Styles
-	pendingPreview *message.Attachment
+	attachments        *attachments.Renderer
+	message            *message.Message
+	sty                *styles.Styles
+	pendingPreview     *message.Attachment
+	pendingTextPreview *TextPreviewContent
 }
 
 // NewUserMessageItem creates a new UserMessageItem.
@@ -118,6 +119,7 @@ func (m *UserMessageItem) HandleMouseClick(btn ansi.MouseButton, x, y int) bool 
 		return false
 	}
 	m.pendingPreview = nil
+	m.pendingTextPreview = nil
 
 	binaries := m.message.BinaryContent()
 	if len(binaries) == 0 {
@@ -136,17 +138,23 @@ func (m *UserMessageItem) HandleMouseClick(btn ansi.MouseButton, x, y int) bool 
 	}
 
 	for _, bc := range binaries {
-		if !strings.HasPrefix(bc.MIMEType, "image/") {
-			continue
+		if strings.HasPrefix(bc.MIMEType, "image/") {
+			att := message.Attachment{
+				FilePath: bc.Path,
+				FileName: filepath.Base(bc.Path),
+				MimeType: bc.MIMEType,
+				Content:  bc.Data,
+			}
+			m.pendingPreview = &att
+			return true
 		}
-		att := message.Attachment{
-			FilePath: bc.Path,
-			FileName: filepath.Base(bc.Path),
-			MimeType: bc.MIMEType,
-			Content:  bc.Data,
+		if strings.HasPrefix(bc.MIMEType, "text/") || strings.HasSuffix(bc.Path, ".txt") {
+			m.pendingTextPreview = &TextPreviewContent{
+				Title: filepath.Base(bc.Path),
+				Text:  string(bc.Data),
+			}
+			return true
 		}
-		m.pendingPreview = &att
-		return true
 	}
 	return false
 }
@@ -156,4 +164,11 @@ func (m *UserMessageItem) PendingImagePreview() *message.Attachment {
 	att := m.pendingPreview
 	m.pendingPreview = nil
 	return att
+}
+
+// PendingTextPreview implements [TextPreviewable].
+func (m *UserMessageItem) PendingTextPreview() *TextPreviewContent {
+	tp := m.pendingTextPreview
+	m.pendingTextPreview = nil
+	return tp
 }
