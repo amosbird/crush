@@ -113,7 +113,7 @@ func (d *DockerMCPToolRenderContext) RenderTool(sty *styles.Styles, width int, o
 	}
 
 	if opts.IsPending() {
-		return pendingTool(sty, d.formatToolName(sty, tool), opts.Anim, false)
+		return pendingTool(sty, d.formatToolName(sty, tool), opts.Anim, false, opts.CreatedAt)
 	}
 
 	header := d.makeHeader(sty, tool, cappedWidth, opts, toolParams...)

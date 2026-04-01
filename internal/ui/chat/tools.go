@@ -102,6 +102,7 @@ type ToolRenderOpts struct {
 	IsSpinning      bool
 	Status          ToolStatus
 	RunStartedAt    time.Time
+	CreatedAt       time.Time
 }
 
 // IsPending returns true if the tool call is still pending (not finished and
@@ -154,6 +155,9 @@ type baseToolMessageItem struct {
 	hasCappedWidth bool
 	// isCompact indicates this tool should render in compact mode.
 	isCompact bool
+	// createdAt records when this tool message item was created, used for
+	// elapsed time display during pending state.
+	createdAt time.Time
 	// spinningFunc allows tools to override the default spinning logic.
 	// If nil, uses the default: !toolCall.Finished && !canceled.
 	spinningFunc SpinningFunc
@@ -192,6 +196,7 @@ func newBaseToolMessageItem(
 		result:                   result,
 		status:                   status,
 		hasCappedWidth:           hasCappedWidth,
+		createdAt:                time.Now(),
 	}
 	if toolCall.Finished && result == nil {
 		t.runStartedAt = time.Now()
@@ -323,6 +328,7 @@ func (t *baseToolMessageItem) RawRender(width int) string {
 			IsSpinning:      t.isSpinning(),
 			Status:          t.computeStatus(),
 			RunStartedAt:    t.runStartedAt,
+			CreatedAt:       t.createdAt,
 		})
 		height = lipgloss.Height(content)
 		// cache the rendered content
@@ -443,7 +449,7 @@ func (t *baseToolMessageItem) HandleKeyEvent(key tea.KeyMsg) (bool, tea.Cmd) {
 }
 
 // pendingTool renders a tool that is still in progress with an animation.
-func pendingTool(sty *styles.Styles, name string, anim *anim.Anim, nested bool) string {
+func pendingTool(sty *styles.Styles, name string, a *anim.Anim, nested bool, createdAt time.Time) string {
 	icon := sty.Tool.IconPending.Render()
 	nameStyle := sty.Tool.NameNormal
 	if nested {
@@ -452,10 +458,18 @@ func pendingTool(sty *styles.Styles, name string, anim *anim.Anim, nested bool) 
 	toolName := nameStyle.Render(name)
 
 	var animView string
-	if anim != nil {
-		animView = anim.Render()
+	if a != nil {
+		animView = a.Render()
 	}
 
+	var elapsed string
+	if !createdAt.IsZero() {
+		elapsed = sty.Tool.StateWaiting.Render(formatElapsed(time.Since(createdAt)))
+	}
+
+	if elapsed != "" {
+		return fmt.Sprintf("%s %s %s %s", icon, toolName, animView, elapsed)
+	}
 	return fmt.Sprintf("%s %s %s", icon, toolName, animView)
 }
 

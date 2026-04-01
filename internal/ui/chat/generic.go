@@ -35,7 +35,7 @@ func (g *GenericToolRenderContext) RenderTool(sty *styles.Styles, width int, opt
 	name := genericPrettyName(opts.ToolCall.Name)
 
 	if opts.IsPending() {
-		return pendingTool(sty, name, opts.Anim, opts.Compact)
+		return pendingTool(sty, name, opts.Anim, opts.Compact, opts.CreatedAt)
 	}
 
 	var params map[string]any

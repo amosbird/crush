@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -102,7 +103,7 @@ type AgentToolRenderContext struct {
 func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if !opts.ToolCall.Finished && !opts.IsCanceled() && len(r.agent.nestedTools) == 0 {
-		return pendingTool(sty, "Agent", opts.Anim, opts.Compact)
+		return pendingTool(sty, "Agent", opts.Anim, opts.Compact, opts.CreatedAt)
 	}
 
 	var params agent.AgentParams
@@ -160,9 +161,13 @@ func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 	var parts []string
 	parts = append(parts, childTools.Enumerator(roundedEnumerator(2, taskTagWidth-5)).String())
 
-	// Show animation if still running.
+	// Show animation and elapsed time if still running.
 	if !opts.HasResult() && !opts.IsCanceled() {
-		parts = append(parts, "", opts.Anim.Render())
+		animLine := opts.Anim.Render()
+		if !opts.CreatedAt.IsZero() {
+			animLine += " " + sty.Tool.StateWaiting.Render(formatElapsed(time.Since(opts.CreatedAt)))
+		}
+		parts = append(parts, "", animLine)
 	}
 
 	result := lipgloss.JoinVertical(lipgloss.Left, parts...)
@@ -244,7 +249,7 @@ type agenticFetchParams struct {
 func (r *AgenticFetchToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if !opts.ToolCall.Finished && !opts.IsCanceled() && len(r.fetch.nestedTools) == 0 {
-		return pendingTool(sty, "Agentic Fetch", opts.Anim, opts.Compact)
+		return pendingTool(sty, "Agentic Fetch", opts.Anim, opts.Compact, opts.CreatedAt)
 	}
 
 	var params agenticFetchParams
@@ -308,9 +313,13 @@ func (r *AgenticFetchToolRenderContext) RenderTool(sty *styles.Styles, width int
 	var parts []string
 	parts = append(parts, childTools.Enumerator(roundedEnumerator(2, promptTagWidth-5)).String())
 
-	// Show animation if still running.
+	// Show animation and elapsed time if still running.
 	if !opts.HasResult() && !opts.IsCanceled() {
-		parts = append(parts, "", opts.Anim.Render())
+		animLine := opts.Anim.Render()
+		if !opts.CreatedAt.IsZero() {
+			animLine += " " + sty.Tool.StateWaiting.Render(formatElapsed(time.Since(opts.CreatedAt)))
+		}
+		parts = append(parts, "", animLine)
 	}
 
 	result := lipgloss.JoinVertical(lipgloss.Left, parts...)
