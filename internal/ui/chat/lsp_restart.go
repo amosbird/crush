@@ -2,6 +2,7 @@ package chat
 
 import (
 	"encoding/json"
+	"log/slog"
 
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/message"
@@ -36,7 +37,9 @@ func (r *LSPRestartToolRenderContext) RenderTool(sty *styles.Styles, width int, 
 	}
 
 	var params tools.LSPRestartParams
-	_ = json.Unmarshal([]byte(opts.ToolCall.Input), &params)
+	if err := json.Unmarshal([]byte(opts.ToolCall.Input), &params); err != nil {
+		slog.Error("Failed to unmarshal tool call input", "tool", "lsp_restart", "error", err)
+	}
 
 	var toolParams []string
 	if params.Name != "" {

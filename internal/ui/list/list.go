@@ -141,7 +141,10 @@ func (l *List) getItemHeight(idx int) int {
 	}
 	rendered := item.Render(l.width)
 	rendered = strings.TrimRight(rendered, "\n")
-	h := strings.Count(rendered, "\n") + 1
+	var h int
+	if rendered != "" {
+		h = strings.Count(rendered, "\n") + 1
+	}
 	l.heightCache[idx] = h
 	return h
 }
@@ -221,11 +224,17 @@ func (l *List) computeTotalHeight() int {
 	}
 
 	var total int
+	var prevHadHeight bool
 	for idx := range l.items {
-		total += l.getItemHeight(idx)
-		if l.gap > 0 && idx < len(l.items)-1 {
+		h := l.getItemHeight(idx)
+		if h == 0 {
+			continue
+		}
+		if l.gap > 0 && prevHadHeight {
 			total += l.gap
 		}
+		total += h
+		prevHadHeight = true
 	}
 	l.totalHeightCache = total
 	return total
@@ -291,7 +300,12 @@ func (l *List) getItem(idx int) renderedItem {
 
 	rendered := item.Render(l.width)
 	rendered = strings.TrimRight(rendered, "\n")
-	height := strings.Count(rendered, "\n") + 1
+	var height int
+	if rendered == "" {
+		height = 0
+	} else {
+		height = strings.Count(rendered, "\n") + 1
+	}
 	ri := renderedItem{
 		content: rendered,
 		height:  height,
@@ -419,6 +433,11 @@ func (l *List) Render() string {
 
 	for linesNeeded > 0 && currentIdx < len(l.items) {
 		item := l.getItem(currentIdx)
+		if item.height == 0 {
+			currentIdx++
+			currentOffset = 0
+			continue
+		}
 		itemLines := strings.Split(item.content, "\n")
 		itemHeight := len(itemLines)
 

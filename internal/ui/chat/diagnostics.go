@@ -2,6 +2,7 @@ package chat
 
 import (
 	"encoding/json"
+	"log/slog"
 
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/fsext"
@@ -41,7 +42,9 @@ func (d *DiagnosticsToolRenderContext) RenderTool(sty *styles.Styles, width int,
 	}
 
 	var params tools.DiagnosticsParams
-	_ = json.Unmarshal([]byte(opts.ToolCall.Input), &params)
+	if err := json.Unmarshal([]byte(opts.ToolCall.Input), &params); err != nil {
+		slog.Error("Failed to unmarshal tool call input", "tool", "diagnostics", "error", err)
+	}
 
 	// Show "project" if no file path, otherwise show the file path.
 	mainParam := "project"

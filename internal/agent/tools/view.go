@@ -159,7 +159,9 @@ func NewViewTool(
 			// hasn't been modified since, return a short stub instead of
 			// re-sending the full content. This saves significant tokens
 			// on redundant reads.
-			if !isSkillFile {
+			// Only dedup full reads (offset=0, default limit). Partial
+			// reads target specific regions that may not have been seen.
+			if !isSkillFile && params.Offset == 0 && params.Limit <= 0 {
 				lastRead := filetracker.LastReadTime(ctx, sessionID, filePath)
 				if !lastRead.IsZero() && !fileInfo.ModTime().After(lastRead) {
 					output := fmt.Sprintf("File %s has not changed since it was last read.", filePath)

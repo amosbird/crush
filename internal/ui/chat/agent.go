@@ -3,6 +3,7 @@ package chat
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -107,7 +108,9 @@ func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 	}
 
 	var params agent.AgentParams
-	_ = json.Unmarshal([]byte(opts.ToolCall.Input), &params)
+	if err := json.Unmarshal([]byte(opts.ToolCall.Input), &params); err != nil {
+		slog.Error("Failed to unmarshal tool call input", "tool", "agent", "error", err)
+	}
 
 	prompt := params.Prompt
 	prompt = strings.ReplaceAll(prompt, "\n", " ")
@@ -234,6 +237,25 @@ func (a *AgenticFetchToolMessageItem) AddNestedTool(tool ToolMessageItem) {
 	a.clearCache()
 }
 
+// Animate progresses the message animation if it should be spinning.
+func (a *AgenticFetchToolMessageItem) Animate(msg anim.StepMsg) tea.Cmd {
+	if a.result != nil || a.Status() == ToolStatusCanceled {
+		return nil
+	}
+	if msg.ID == a.ID() {
+		return a.anim.Animate(msg)
+	}
+	for _, nestedTool := range a.nestedTools {
+		if msg.ID != nestedTool.ID() {
+			continue
+		}
+		if s, ok := nestedTool.(Animatable); ok {
+			return s.Animate(msg)
+		}
+	}
+	return nil
+}
+
 // AgenticFetchToolRenderContext renders agentic fetch tool messages.
 type AgenticFetchToolRenderContext struct {
 	fetch *AgenticFetchToolMessageItem
@@ -253,7 +275,9 @@ func (r *AgenticFetchToolRenderContext) RenderTool(sty *styles.Styles, width int
 	}
 
 	var params agenticFetchParams
-	_ = json.Unmarshal([]byte(opts.ToolCall.Input), &params)
+	if err := json.Unmarshal([]byte(opts.ToolCall.Input), &params); err != nil {
+		slog.Error("Failed to unmarshal tool call input", "tool", "agentic_fetch", "error", err)
+	}
 
 	prompt := params.Prompt
 	prompt = strings.ReplaceAll(prompt, "\n", " ")
@@ -331,4 +355,157 @@ func (r *AgenticFetchToolRenderContext) RenderTool(sty *styles.Styles, width int
 	}
 
 	return result
+}
+
+// -----------------------------------------------------------------------------
+// Worker Tool
+// -----------------------------------------------------------------------------
+
+// WorkerToolMessageItem is a message item that represents a worker tool call.
+type WorkerToolMessageItem struct {
+	*baseToolMessageItem
+
+	nestedTools []ToolMessageItem
+}
+
+var (
+	_ ToolMessageItem     = (*WorkerToolMessageItem)(nil)
+	_ NestedToolContainer = (*WorkerToolMessageItem)(nil)
+)
+
+// NewWorkerToolMessageItem creates a new [WorkerToolMessageItem].
+func NewWorkerToolMessageItem(
+	sty *styles.Styles,
+	toolCall message.ToolCall,
+	result *message.ToolResult,
+	canceled bool,
+) *WorkerToolMessageItem {
+	t := &WorkerToolMessageItem{}
+	t.baseToolMessageItem = newBaseToolMessageItem(sty, toolCall, result, &WorkerToolRenderContext{worker: t}, canceled)
+	t.spinningFunc = func(state SpinningState) bool {
+		return !state.HasResult() && !state.IsCanceled()
+	}
+	return t
+}
+
+// Animate progresses the message animation if it should be spinning.
+func (w *WorkerToolMessageItem) Animate(msg anim.StepMsg) tea.Cmd {
+	if w.result != nil || w.Status() == ToolStatusCanceled {
+		return nil
+	}
+	if msg.ID == w.ID() {
+		return w.anim.Animate(msg)
+	}
+	for _, nestedTool := range w.nestedTools {
+		if msg.ID != nestedTool.ID() {
+			continue
+		}
+		if s, ok := nestedTool.(Animatable); ok {
+			return s.Animate(msg)
+		}
+	}
+	return nil
+}
+
+// NestedTools returns the nested tools.
+func (w *WorkerToolMessageItem) NestedTools() []ToolMessageItem {
+	return w.nestedTools
+}
+
+// SetNestedTools sets the nested tools.
+func (w *WorkerToolMessageItem) SetNestedTools(tools []ToolMessageItem) {
+	w.nestedTools = tools
+	w.clearCache()
+}
+
+// AddNestedTool adds a nested tool.
+func (w *WorkerToolMessageItem) AddNestedTool(tool ToolMessageItem) {
+	if s, ok := tool.(Compactable); ok {
+		s.SetCompact(true)
+	}
+	w.nestedTools = append(w.nestedTools, tool)
+	w.clearCache()
+}
+
+// WorkerToolRenderContext renders worker tool messages.
+type WorkerToolRenderContext struct {
+	worker *WorkerToolMessageItem
+}
+
+// RenderTool implements the [ToolRenderer] interface.
+func (r *WorkerToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
+	cappedWidth := cappedMessageWidth(width)
+	if !opts.ToolCall.Finished && !opts.IsCanceled() && len(r.worker.nestedTools) == 0 {
+		return pendingTool(sty, "Worker", opts.Anim, opts.Compact, opts.CreatedAt)
+	}
+
+	var params agent.WorkerParams
+	if err := json.Unmarshal([]byte(opts.ToolCall.Input), &params); err != nil {
+		slog.Error("Failed to unmarshal tool call input", "tool", "worker", "error", err)
+	}
+
+	prompt := params.Prompt
+	prompt = strings.ReplaceAll(prompt, "\n", " ")
+
+	header := toolHeader(sty, opts.Status, "Worker", cappedWidth, opts.Compact)
+	if opts.Compact {
+		return header
+	}
+
+	taskTag := sty.Tool.AgentTaskTag.Render("Task")
+	taskTagWidth := lipgloss.Width(taskTag)
+
+	remainingWidth := min(cappedWidth-taskTagWidth-3, maxTextWidth-taskTagWidth-3)
+
+	promptText := sty.Tool.AgentPrompt.Width(remainingWidth).Render(prompt)
+
+	header = lipgloss.JoinVertical(
+		lipgloss.Left,
+		header,
+		"",
+		lipgloss.JoinHorizontal(
+			lipgloss.Left,
+			taskTag,
+			" ",
+			promptText,
+		),
+	)
+
+	childTools := tree.Root(header)
+
+	nestedTools := r.worker.nestedTools
+	collapsed := !opts.ExpandedContent && len(nestedTools) > maxCollapsedNestedTools
+
+	if collapsed {
+		hidden := len(nestedTools) - maxCollapsedNestedTools
+		childTools.Child(sty.Tool.ContentTruncation.Render(
+			fmt.Sprintf("… %d more tool calls [click or space to expand]", hidden),
+		))
+		nestedTools = nestedTools[len(nestedTools)-maxCollapsedNestedTools:]
+	}
+
+	for _, nestedTool := range nestedTools {
+		childView := nestedTool.Render(remainingWidth)
+		childTools.Child(childView)
+	}
+
+	var parts []string
+	parts = append(parts, childTools.Enumerator(roundedEnumerator(2, taskTagWidth-5)).String())
+
+	if !opts.HasResult() && !opts.IsCanceled() {
+		animLine := opts.Anim.Render()
+		if !opts.CreatedAt.IsZero() {
+			animLine += " " + sty.Tool.StateWaiting.Render(formatElapsed(time.Since(opts.CreatedAt)))
+		}
+		parts = append(parts, "", animLine)
+	}
+
+	workerResult := lipgloss.JoinVertical(lipgloss.Left, parts...)
+
+	if opts.HasResult() && opts.Result.Content != "" {
+		body := toolOutputMarkdownContent(sty, opts.Result.Content, cappedWidth-toolBodyLeftPaddingTotal, opts.ExpandedContent)
+		return joinToolParts(workerResult, body)
+	}
+
+	return workerResult
 }

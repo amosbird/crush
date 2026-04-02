@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -52,7 +53,9 @@ func (b *BashToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 	// Check if this is a background job.
 	var meta tools.BashResponseMetadata
 	if opts.HasResult() {
-		_ = json.Unmarshal([]byte(opts.Result.Metadata), &meta)
+		if err := json.Unmarshal([]byte(opts.Result.Metadata), &meta); err != nil {
+			slog.Error("Failed to unmarshal tool result metadata", "tool", "bash", "error", err)
+		}
 	}
 
 	if meta.Background {

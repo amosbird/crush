@@ -71,7 +71,7 @@ func (s *service) Ask(ctx context.Context, req QuestionRequest) ([]string, error
 
 	// Re-publish periodically in case the event was dropped under
 	// pipeline backpressure (e.g. during heavy streaming).
-	retryTicker := time.NewTicker(3 * time.Second)
+	retryTicker := time.NewTicker(500 * time.Millisecond)
 	defer retryTicker.Stop()
 
 	for {

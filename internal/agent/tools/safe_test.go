@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -250,6 +251,65 @@ func TestMatchesSafeCommand(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			require.Equal(t, tt.match, matchesSafeCommand(tt.cmd))
+		})
+	}
+}
+
+var oldSafeCommands = []string{
+	"[", "basename", "cal", "cat", "cd", "column", "comm", "cmp", "cut",
+	"date", "df", "diff", "dirname", "du", "echo", "env", "expand", "expr",
+	"false", "file", "fmt", "fold", "free", "getent", "groups", "head",
+	"hostname", "id", "join", "less", "locale", "ls", "man", "md5sum",
+	"more", "nl", "nproc", "od", "paste", "printenv", "printf", "ps",
+	"pwd", "readlink", "realpath", "rev", "seq", "set", "sha1sum",
+	"sha256sum", "sort", "stat", "strings", "tac", "tail", "test", "time",
+	"top", "tr", "true", "type", "uname", "unexpand", "uniq", "unset",
+	"uptime", "wc", "whatis", "whereis", "which", "whoami",
+	"fd", "grep", "rg",
+	"bat", "jq", "tree", "yq",
+	"git blame", "git branch", "git config --get", "git config --list",
+	"git describe", "git diff", "git grep", "git log", "git ls-files",
+	"git ls-remote", "git remote", "git rev-list", "git rev-parse",
+	"git shortlog", "git show", "git stash list", "git status", "git tag",
+	"go doc", "go env", "go list", "go version", "go vet",
+}
+
+func matchesSafeCommandOld(cmd string) bool {
+	cmdLower := strings.ToLower(strings.TrimSpace(cmd))
+	for _, safe := range oldSafeCommands {
+		if strings.HasPrefix(cmdLower, safe) {
+			if len(cmdLower) == len(safe) || cmdLower[len(safe)] == ' ' {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func BenchmarkMatchesSafeCommand(b *testing.B) {
+	cases := []struct {
+		name string
+		cmd  string
+	}{
+		{"exact_single_word", "ls -la /tmp"},
+		{"exact_single_word_short", "pwd"},
+		{"multi_word_prefix", "git status --porcelain"},
+		{"no_match", "rm -rf /tmp/foo"},
+		{"multi_word_no_match", "git push origin main"},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name+"/old_linear_scan", func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = matchesSafeCommandOld(tc.cmd)
+			}
+		})
+		b.Run(tc.name+"/new_map_lookup", func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = matchesSafeCommand(tc.cmd)
+			}
 		})
 	}
 }

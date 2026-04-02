@@ -5,91 +5,97 @@ import (
 	"strings"
 )
 
-var safeCommands = []string{
+// safeCommandsExact contains single-word commands that can be matched with
+// an O(1) map lookup instead of a linear scan.
+var safeCommandsExact = map[string]struct{}{
 	// Shell builtins and core utils (read-only / harmless).
-	"[",
-	"basename",
-	"cal",
-	"cat",
-	"cd",
-	"column",
-	"comm",
-	"cmp",
-	"cut",
-	"date",
-	"df",
-	"diff",
-	"dirname",
-	"du",
-	"echo",
-	"env",
-	"expand",
-	"expr",
-	"false",
-	"file",
-	"fmt",
-	"fold",
-	"free",
-	"getent",
-	"groups",
-	"head",
-	"hostname",
-	"id",
-	"join",
-	"less",
-	"locale",
-	"ls",
-	"man",
-	"md5sum",
-	"more",
-	"nl",
-	"nproc",
-	"od",
-	"paste",
-	"printenv",
-	"printf",
-	"ps",
-	"pwd",
-	"readlink",
-	"realpath",
-	"rev",
-	"seq",
-	"set",
-	"sha1sum",
-	"sha256sum",
-	"sort",
-	"stat",
-	"strings",
-	"tac",
-	"tail",
-	"test",
-	"time",
-	"top",
-	"tr",
-	"true",
-	"type",
-	"uname",
-	"unexpand",
-	"uniq",
-	"unset",
-	"uptime",
-	"wc",
-	"whatis",
-	"whereis",
-	"which",
-	"whoami",
+	"[":         {},
+	"basename":  {},
+	"cal":       {},
+	"cat":       {},
+	"cd":        {},
+	"column":    {},
+	"comm":      {},
+	"cmp":       {},
+	"cut":       {},
+	"date":      {},
+	"df":        {},
+	"diff":      {},
+	"dirname":   {},
+	"du":        {},
+	"echo":      {},
+	"env":       {},
+	"expand":    {},
+	"expr":      {},
+	"false":     {},
+	"file":      {},
+	"fmt":       {},
+	"fold":      {},
+	"free":      {},
+	"getent":    {},
+	"groups":    {},
+	"head":      {},
+	"hostname":  {},
+	"id":        {},
+	"join":      {},
+	"less":      {},
+	"locale":    {},
+	"ls":        {},
+	"man":       {},
+	"md5sum":    {},
+	"more":      {},
+	"nl":        {},
+	"nproc":     {},
+	"od":        {},
+	"paste":     {},
+	"printenv":  {},
+	"printf":    {},
+	"ps":        {},
+	"pwd":       {},
+	"readlink":  {},
+	"realpath":  {},
+	"rev":       {},
+	"seq":       {},
+	"set":       {},
+	"sha1sum":   {},
+	"sha256sum": {},
+	"sort":      {},
+	"stat":      {},
+	"strings":   {},
+	"tac":       {},
+	"tail":      {},
+	"test":      {},
+	"time":      {},
+	"top":       {},
+	"tr":        {},
+	"true":      {},
+	"type":      {},
+	"uname":     {},
+	"unexpand":  {},
+	"uniq":      {},
+	"unset":     {},
+	"uptime":    {},
+	"wc":        {},
+	"whatis":    {},
+	"whereis":   {},
+	"which":     {},
+	"whoami":    {},
 
 	// Search tools (read-only).
-	"fd",
-	"grep",
-	"rg",
+	"fd":   {},
+	"grep": {},
+	"rg":   {},
 
 	// Data processing (read-only).
-	"bat",
-	"jq",
-	"tree",
-	"yq",
+	"bat":  {},
+	"jq":   {},
+	"tree": {},
+	"yq":   {},
+}
 
+// safeCommandsPrefix contains multi-word command prefixes that require a
+// linear prefix scan. This list is short (~25 entries), so the scan is fast.
+var safeCommandsPrefix = []string{
 	// Git (read-only operations).
 	"git blame",
 	"git branch",
@@ -120,15 +126,16 @@ var safeCommands = []string{
 
 func init() {
 	if runtime.GOOS == "windows" {
-		safeCommands = append(
-			safeCommands,
+		for _, cmd := range []string{
 			"ipconfig",
 			"nslookup",
 			"ping",
 			"systeminfo",
 			"tasklist",
 			"where",
-		)
+		} {
+			safeCommandsExact[cmd] = struct{}{}
+		}
 	}
 }
 
@@ -218,9 +225,25 @@ func splitShellCommands(cmd string) []string {
 // matchesSafeCommand checks a single (non-compound) command against the safe
 // commands list. The command is lowercased before matching. Only an exact
 // match or a match followed by a space (i.e. arguments) is accepted.
+//
+// Single-word commands are checked via O(1) map lookup. Multi-word prefixes
+// (e.g. "git diff", "go vet") fall back to a short linear scan.
 func matchesSafeCommand(cmd string) bool {
 	cmdLower := strings.ToLower(strings.TrimSpace(cmd))
-	for _, safe := range safeCommands {
+	if cmdLower == "" {
+		return true
+	}
+
+	// Extract the first word for exact-match lookup.
+	firstWord, _, _ := strings.Cut(cmdLower, " ")
+
+	// O(1) check: is the first word itself a safe single-word command?
+	if _, ok := safeCommandsExact[firstWord]; ok {
+		return true
+	}
+
+	// Linear scan over the short multi-word prefix list.
+	for _, safe := range safeCommandsPrefix {
 		if strings.HasPrefix(cmdLower, safe) {
 			if len(cmdLower) == len(safe) || cmdLower[len(safe)] == ' ' {
 				return true

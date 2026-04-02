@@ -499,31 +499,31 @@ func (m *Message) ToAIMessage() []fantasy.Message {
 		var parts []fantasy.MessagePart
 		text := strings.TrimSpace(m.Content().Text)
 		var textAttachments []Attachment
-		for _, content := range m.BinaryContent() {
-			if !strings.HasPrefix(content.MIMEType, "text/") {
+		var mediaParts []fantasy.MessagePart
+		for _, part := range m.Parts {
+			bc, ok := part.(BinaryContent)
+			if !ok {
 				continue
 			}
-			textAttachments = append(textAttachments, Attachment{
-				FilePath: content.Path,
-				MimeType: content.MIMEType,
-				Content:  content.Data,
-			})
+			if strings.HasPrefix(bc.MIMEType, "text/") {
+				textAttachments = append(textAttachments, Attachment{
+					FilePath: bc.Path,
+					MimeType: bc.MIMEType,
+					Content:  bc.Data,
+				})
+			} else {
+				mediaParts = append(mediaParts, fantasy.FilePart{
+					Filename:  bc.Path,
+					Data:      bc.Data,
+					MediaType: bc.MIMEType,
+				})
+			}
 		}
 		text = PromptWithTextAttachments(text, textAttachments)
 		if text != "" {
 			parts = append(parts, fantasy.TextPart{Text: text})
 		}
-		for _, content := range m.BinaryContent() {
-			// skip text attachements
-			if strings.HasPrefix(content.MIMEType, "text/") {
-				continue
-			}
-			parts = append(parts, fantasy.FilePart{
-				Filename:  content.Path,
-				Data:      content.Data,
-				MediaType: content.MIMEType,
-			})
-		}
+		parts = append(parts, mediaParts...)
 		messages = append(messages, fantasy.Message{
 			Role:    fantasy.MessageRoleUser,
 			Content: parts,

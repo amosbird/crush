@@ -2,6 +2,7 @@ package chat
 
 import (
 	"encoding/json"
+	"log/slog"
 
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/fsext"
@@ -37,7 +38,9 @@ func (r *ReferencesToolRenderContext) RenderTool(sty *styles.Styles, width int, 
 	}
 
 	var params tools.ReferencesParams
-	_ = json.Unmarshal([]byte(opts.ToolCall.Input), &params)
+	if err := json.Unmarshal([]byte(opts.ToolCall.Input), &params); err != nil {
+		slog.Error("Failed to unmarshal tool call input", "tool", "references", "error", err)
+	}
 
 	toolParams := []string{params.Symbol}
 	if params.Path != "" {

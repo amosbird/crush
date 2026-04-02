@@ -2,6 +2,7 @@ package chat
 
 import (
 	"encoding/json"
+	"log/slog"
 
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/message"
@@ -28,12 +29,16 @@ func (p *PlanModeToolRenderContext) RenderTool(sty *styles.Styles, width int, op
 
 	var meta tools.PlanModeResponseMetadata
 	if opts.HasResult() {
-		_ = json.Unmarshal([]byte(opts.Result.Metadata), &meta)
+		if err := json.Unmarshal([]byte(opts.Result.Metadata), &meta); err != nil {
+			slog.Error("Failed to unmarshal tool result metadata", "tool", "plan_mode", "error", err)
+		}
 	}
 
 	if !opts.HasResult() {
 		var params tools.PlanModeParams
-		_ = json.Unmarshal([]byte(opts.ToolCall.Input), &params)
+		if err := json.Unmarshal([]byte(opts.ToolCall.Input), &params); err != nil {
+			slog.Error("Failed to unmarshal tool call input", "tool", "plan_mode", "error", err)
+		}
 
 		if params.Mode == "implement" && params.Plan != "" {
 			header := toolHeader(sty, opts.Status, "Plan Mode", cappedWidth, opts.Compact, "reviewing plan")

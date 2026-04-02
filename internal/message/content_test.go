@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/fantasy"
 	"github.com/stretchr/testify/require"
 )
 
@@ -134,6 +135,92 @@ func BenchmarkPromptWithTextAttachments(b *testing.B) {
 			b.ReportAllocs()
 			for range b.N {
 				_ = PromptWithTextAttachments(prompt, attachments)
+			}
+		})
+	}
+}
+
+func makeBenchMessage(numText, numBinary int) Message {
+	var parts []ContentPart
+	parts = append(parts, TextContent{Text: "Process these files"})
+	for i := range numText {
+		parts = append(parts, BinaryContent{
+			Path:     fmt.Sprintf("/path/to/file%d.txt", i),
+			MIMEType: "text/plain",
+			Data:     []byte("hello world content"),
+		})
+	}
+	for i := range numBinary {
+		parts = append(parts, BinaryContent{
+			Path:     fmt.Sprintf("/path/to/image%d.png", i),
+			MIMEType: "image/png",
+			Data:     []byte("fake png data"),
+		})
+	}
+	return Message{Role: User, Parts: parts}
+}
+
+func toAIMessageOld(m *Message) []fantasy.Message {
+	var messages []fantasy.Message
+	var parts []fantasy.MessagePart
+	text := strings.TrimSpace(m.Content().Text)
+	var textAttachments []Attachment
+	for _, content := range m.BinaryContent() {
+		if !strings.HasPrefix(content.MIMEType, "text/") {
+			continue
+		}
+		textAttachments = append(textAttachments, Attachment{
+			FilePath: content.Path,
+			MimeType: content.MIMEType,
+			Content:  content.Data,
+		})
+	}
+	text = PromptWithTextAttachments(text, textAttachments)
+	if text != "" {
+		parts = append(parts, fantasy.TextPart{Text: text})
+	}
+	for _, content := range m.BinaryContent() {
+		if strings.HasPrefix(content.MIMEType, "text/") {
+			continue
+		}
+		parts = append(parts, fantasy.FilePart{
+			Filename:  content.Path,
+			Data:      content.Data,
+			MediaType: content.MIMEType,
+		})
+	}
+	messages = append(messages, fantasy.Message{
+		Role:    fantasy.MessageRoleUser,
+		Content: parts,
+	})
+	return messages
+}
+
+func BenchmarkToAIMessage(b *testing.B) {
+	cases := []struct {
+		name      string
+		numBinary int
+		numText   int
+	}{
+		{"1text_1media", 1, 1},
+		{"5text_5media", 5, 5},
+		{"10text_10media", 10, 10},
+		{"20text_20media", 20, 20},
+	}
+
+	for _, tc := range cases {
+		msg := makeBenchMessage(tc.numText, tc.numBinary)
+
+		b.Run(tc.name+"/old_dual_scan", func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = toAIMessageOld(&msg)
+			}
+		})
+		b.Run(tc.name+"/new_single_pass", func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = msg.ToAIMessage()
 			}
 		})
 	}
