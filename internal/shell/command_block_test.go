@@ -292,10 +292,10 @@ func TestCommandsBlocker(t *testing.T) {
 			shouldBlock: false,
 		},
 		{
-			name:        "case sensitive matching",
+			name:        "case insensitive matching",
 			banned:      []string{"curl"},
 			input:       []string{"CURL", "https://example.com"},
-			shouldBlock: false,
+			shouldBlock: true,
 		},
 	}
 

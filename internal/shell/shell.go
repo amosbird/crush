@@ -181,18 +181,20 @@ func (s *Shell) SetBlockFuncs(blockFuncs []BlockFunc) {
 	s.blockFuncs = blockFuncs
 }
 
-// CommandsBlocker creates a BlockFunc that blocks exact command matches
+// CommandsBlocker creates a BlockFunc that blocks exact command matches.
+// Matching is case-insensitive to prevent bypasses on case-insensitive
+// filesystems (e.g. macOS HFS+).
 func CommandsBlocker(cmds []string) BlockFunc {
 	bannedSet := make(map[string]struct{})
 	for _, cmd := range cmds {
-		bannedSet[cmd] = struct{}{}
+		bannedSet[strings.ToLower(cmd)] = struct{}{}
 	}
 
 	return func(args []string) bool {
 		if len(args) == 0 {
 			return false
 		}
-		_, ok := bannedSet[args[0]]
+		_, ok := bannedSet[strings.ToLower(args[0])]
 		return ok
 	}
 }
