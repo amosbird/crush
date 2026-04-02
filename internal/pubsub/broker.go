@@ -104,8 +104,16 @@ func (b *Broker[T]) Publish(t EventType, payload T) {
 		select {
 		case sub <- event:
 		default:
-			// Channel is full, subscriber is slow - skip this event
-			// This prevents blocking the publisher
+			// Channel is full. Drain one stale event and retry to ensure
+			// the latest state is always delivered.
+			select {
+			case <-sub:
+			default:
+			}
+			select {
+			case sub <- event:
+			default:
+			}
 		}
 	}
 }

@@ -65,6 +65,11 @@ const (
 	// context window. Individual tools should still enforce their own limits;
 	// this is a centralized backstop.
 	maxToolResultSize = 80_000
+
+	// streamIdleTimeout cancels and retries an LLM streaming request when
+	// no SSE data arrives within this duration. This prevents indefinite
+	// hangs caused by provider connection issues.
+	streamIdleTimeout = 30 * time.Second
 )
 
 var userAgent = fmt.Sprintf("Charm-Crush/%s (https://charm.land/crush)", version.Version)
@@ -297,17 +302,17 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 				)
 				if summarizeErr := a.Summarize(ctx, call.SessionID, call.ProviderOptions); summarizeErr != nil {
 					a.circuitBreaker.recordFailure(call.SessionID)
-					slog.Error("Pre-flight auto-summarize failed", "error", summarizeErr)
-					return nil, fmt.Errorf("pre-flight auto-summarize failed: %w", summarizeErr)
+					slog.Error("Pre-flight auto-summarize failed, continuing without summarization", "error", summarizeErr)
+				} else {
+					a.circuitBreaker.recordSuccess(call.SessionID)
+					call.autoSummarizeDepth++
+					slog.Debug("Pre-flight summarize done, recursing into Run()",
+						"session_id", call.SessionID,
+						"queue_size", a.QueuedPrompts(call.SessionID),
+						"prompt_preview", truncateString(call.Prompt, 80),
+					)
+					return a.Run(ctx, call)
 				}
-				a.circuitBreaker.recordSuccess(call.SessionID)
-				call.autoSummarizeDepth++
-				slog.Debug("Pre-flight summarize done, recursing into Run()",
-					"session_id", call.SessionID,
-					"queue_size", a.QueuedPrompts(call.SessionID),
-					"prompt_preview", truncateString(call.Prompt, 80),
-				)
-				return a.Run(ctx, call)
 			}
 		}
 	}
@@ -349,21 +354,23 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	var currentAssistant *message.Message
 	var shouldSummarize bool
 	var clearContextAfterStep bool
+	sw := newStreamingWriter(a.messages)
 	if _, exists := a.planMode.Get(call.SessionID); !exists {
 		a.planMode.Set(call.SessionID, detectPlanMode(msgs))
 	}
 	planModeActive, _ := a.planMode.Get(call.SessionID)
 	result, err := agent.Stream(genCtx, fantasy.AgentStreamCall{
-		Prompt:           message.PromptWithTextAttachments(call.Prompt, call.Attachments),
-		Files:            files,
-		Messages:         history,
-		ProviderOptions:  call.ProviderOptions,
-		MaxOutputTokens:  &call.MaxOutputTokens,
-		TopP:             call.TopP,
-		Temperature:      call.Temperature,
-		PresencePenalty:  call.PresencePenalty,
-		TopK:             call.TopK,
-		FrequencyPenalty: call.FrequencyPenalty,
+		Prompt:            message.PromptWithTextAttachments(call.Prompt, call.Attachments),
+		Files:             files,
+		Messages:          history,
+		ProviderOptions:   call.ProviderOptions,
+		MaxOutputTokens:   &call.MaxOutputTokens,
+		TopP:              call.TopP,
+		Temperature:       call.Temperature,
+		PresencePenalty:   call.PresencePenalty,
+		TopK:              call.TopK,
+		FrequencyPenalty:  call.FrequencyPenalty,
+		StreamIdleTimeout: streamIdleTimeout,
 		PrepareStep: func(callContext context.Context, options fantasy.PrepareStepFunctionOptions) (_ context.Context, prepared fantasy.PrepareStepResult, err error) {
 			prepared.Messages = options.Messages
 			for i := range prepared.Messages {
@@ -467,11 +474,11 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 		},
 		OnReasoningStart: func(id string, reasoning fantasy.ReasoningContent) error {
 			currentAssistant.AppendReasoningContent(reasoning.Text)
-			return a.messages.Update(genCtx, *currentAssistant)
+			return sw.Update(genCtx, *currentAssistant)
 		},
 		OnReasoningDelta: func(id string, text string) error {
 			currentAssistant.AppendReasoningContent(text)
-			return a.messages.Update(genCtx, *currentAssistant)
+			return sw.Update(genCtx, *currentAssistant)
 		},
 		OnReasoningEnd: func(id string, reasoning fantasy.ReasoningContent) error {
 			// handle anthropic signature
@@ -491,7 +498,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 				}
 			}
 			currentAssistant.FinishThinking()
-			return a.messages.Update(genCtx, *currentAssistant)
+			return sw.Update(genCtx, *currentAssistant)
 		},
 		OnTextDelta: func(id string, text string) error {
 			// Strip leading newline from initial text content. This is is
@@ -502,9 +509,10 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			}
 
 			currentAssistant.AppendContent(text)
-			return a.messages.Update(genCtx, *currentAssistant)
+			return sw.Update(genCtx, *currentAssistant)
 		},
 		OnToolInputStart: func(id string, toolName string) error {
+			sw.Flush(ctx)
 			toolCall := message.ToolCall{
 				ID:               id,
 				Name:             toolName,
@@ -525,6 +533,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			)
 		},
 		OnToolCall: func(tc fantasy.ToolCallContent) error {
+			sw.Flush(ctx)
 			toolCall := message.ToolCall{
 				ID:               tc.ToolCallID,
 				Name:             tc.ToolName,
@@ -558,6 +567,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			return createMsgErr
 		},
 		OnStepFinish: func(stepResult fantasy.StepResult) error {
+			sw.Flush(ctx)
 			finishReason := message.FinishReasonUnknown
 			switch stepResult.FinishReason {
 			case fantasy.FinishReasonLength:
@@ -613,6 +623,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 		},
 	})
 
+	sw.Flush(ctx)
 	a.eventPromptResponded(call.SessionID, time.Since(startTime).Truncate(time.Second))
 
 	if err != nil {
@@ -864,9 +875,7 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 		return nil
 	}
 
-	if err := a.saveTranscript(genCtx, sessionID); err != nil {
-		slog.Warn("failed to save transcript", "error", err)
-	}
+	go a.saveTranscriptFromMessages(sessionID, msgs)
 
 	aiMsgs, _ := a.preparePrompt(msgs)
 
@@ -893,10 +902,12 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 
 	summaryPromptText := buildSummaryPrompt(a.dataDir, sessionID, currentSession.Todos, "")
 
+	summarySW := newStreamingWriter(a.messages)
 	resp, err := agent.Stream(genCtx, fantasy.AgentStreamCall{
-		Prompt:          summaryPromptText,
-		Messages:        aiMsgs,
-		ProviderOptions: opts,
+		Prompt:            summaryPromptText,
+		Messages:          aiMsgs,
+		ProviderOptions:   opts,
+		StreamIdleTimeout: streamIdleTimeout,
 		PrepareStep: func(callContext context.Context, options fantasy.PrepareStepFunctionOptions) (_ context.Context, prepared fantasy.PrepareStepResult, err error) {
 			prepared.Messages = options.Messages
 			if systemPromptPrefix != "" {
@@ -906,7 +917,7 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 		},
 		OnReasoningDelta: func(id string, text string) error {
 			summaryMessage.AppendReasoningContent(text)
-			return a.messages.Update(genCtx, summaryMessage)
+			return summarySW.Update(genCtx, summaryMessage)
 		},
 		OnReasoningEnd: func(id string, reasoning fantasy.ReasoningContent) error {
 			// Handle anthropic signature.
@@ -916,13 +927,14 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 				}
 			}
 			summaryMessage.FinishThinking()
-			return a.messages.Update(genCtx, summaryMessage)
+			return summarySW.Update(genCtx, summaryMessage)
 		},
 		OnTextDelta: func(id, text string) error {
 			summaryMessage.AppendContent(text)
-			return a.messages.Update(genCtx, summaryMessage)
+			return summarySW.Update(genCtx, summaryMessage)
 		},
 	})
+	summarySW.Flush(ctx)
 	if err != nil {
 		isCancelErr := errors.Is(err, context.Canceled)
 		if isCancelErr {
@@ -1858,23 +1870,27 @@ func serializeTranscript(msgs []message.Message) string {
 	return sb.String()
 }
 
-// saveTranscript serializes messages to a markdown file for later search.
-func (a *sessionAgent) saveTranscript(ctx context.Context, sessionID string) error {
+// saveTranscriptFromMessages writes a transcript from pre-loaded messages,
+// avoiding a redundant DB round-trip. It logs errors instead of returning
+// them because it is intended to be called in a goroutine.
+func (a *sessionAgent) saveTranscriptFromMessages(sessionID string, msgs []message.Message) {
+	if err := a.writeTranscript(sessionID, msgs); err != nil {
+		slog.Warn("failed to save transcript", "error", err)
+	}
+}
+
+func (a *sessionAgent) writeTranscript(sessionID string, msgs []message.Message) error {
 	if a.dataDir == "" {
 		return nil
 	}
-	msgs, err := a.messages.List(ctx, sessionID)
-	if err != nil {
-		return fmt.Errorf("failed to list messages: %w", err)
-	}
 	transcriptsDir := filepath.Join(a.dataDir, "transcripts")
-	if err := os.MkdirAll(transcriptsDir, 0o755); err != nil {
+	if err := os.MkdirAll(transcriptsDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create transcripts directory: %w", err)
 	}
 
 	transcriptPath := filepath.Join(transcriptsDir, sessionID+".md")
 	transcript := serializeTranscript(msgs)
-	if err := os.WriteFile(transcriptPath, []byte(transcript), 0o644); err != nil {
+	if err := os.WriteFile(transcriptPath, []byte(transcript), 0o600); err != nil {
 		return fmt.Errorf("failed to write transcript: %w", err)
 	}
 
@@ -1922,12 +1938,12 @@ func (a *sessionAgent) extractAndSaveKeyFacts(sessionID string, summaryText stri
 	}
 
 	factsDir := filepath.Join(a.dataDir, "transcripts")
-	if err := os.MkdirAll(factsDir, 0o755); err != nil {
+	if err := os.MkdirAll(factsDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create transcripts directory: %w", err)
 	}
 
 	factsPath := filepath.Join(factsDir, sessionID+".facts")
-	if err := os.WriteFile(factsPath, []byte(facts), 0o644); err != nil {
+	if err := os.WriteFile(factsPath, []byte(facts), 0o600); err != nil {
 		return fmt.Errorf("failed to write key facts: %w", err)
 	}
 

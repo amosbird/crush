@@ -37,8 +37,10 @@ type MessagePage struct {
 
 type Service interface {
 	pubsub.Subscriber[Message]
+	pubsub.Publisher[Message]
 	Create(ctx context.Context, sessionID string, params CreateMessageParams) (Message, error)
 	Update(ctx context.Context, message Message) error
+	Persist(ctx context.Context, message Message) error
 	Get(ctx context.Context, id string) (Message, error)
 	List(ctx context.Context, sessionID string) ([]Message, error)
 	ListRecent(ctx context.Context, sessionID string, limit int) (MessagePage, error)
@@ -134,6 +136,16 @@ func (s *service) DeleteSessionMessages(ctx context.Context, sessionID string) e
 }
 
 func (s *service) Update(ctx context.Context, message Message) error {
+	if err := s.Persist(ctx, message); err != nil {
+		return err
+	}
+	message.UpdatedAt = time.Now().Unix()
+	s.Publish(pubsub.UpdatedEvent, message.Clone())
+	return nil
+}
+
+// Persist writes the message to the DB without publishing a pubsub event.
+func (s *service) Persist(ctx context.Context, message Message) error {
 	parts, err := marshalParts(message.Parts)
 	if err != nil {
 		return err
@@ -143,19 +155,11 @@ func (s *service) Update(ctx context.Context, message Message) error {
 		finishedAt.Int64 = f.Time
 		finishedAt.Valid = true
 	}
-	err = s.q.UpdateMessage(ctx, db.UpdateMessageParams{
+	return s.q.UpdateMessage(ctx, db.UpdateMessageParams{
 		ID:         message.ID,
 		Parts:      string(parts),
 		FinishedAt: finishedAt,
 	})
-	if err != nil {
-		return err
-	}
-	message.UpdatedAt = time.Now().Unix()
-	// Clone the message before publishing to avoid race conditions with
-	// concurrent modifications to the Parts slice.
-	s.Publish(pubsub.UpdatedEvent, message.Clone())
-	return nil
 }
 
 func (s *service) Get(ctx context.Context, id string) (Message, error) {
