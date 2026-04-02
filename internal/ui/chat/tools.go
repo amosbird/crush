@@ -224,6 +224,7 @@ func NewToolMessageItem(
 	toolCall message.ToolCall,
 	result *message.ToolResult,
 	canceled bool,
+	planMode bool,
 ) ToolMessageItem {
 	var item ToolMessageItem
 	switch toolCall.Name {
@@ -257,6 +258,8 @@ func NewToolMessageItem(
 		item = NewDiagnosticsToolMessageItem(sty, toolCall, result, canceled)
 	case agent.AgentToolName:
 		item = NewAgentToolMessageItem(sty, toolCall, result, canceled)
+	case agent.WorkerToolName:
+		item = NewWorkerToolMessageItem(sty, toolCall, result, canceled)
 	case tools.AgenticFetchToolName:
 		item = NewAgenticFetchToolMessageItem(sty, toolCall, result, canceled)
 	case tools.WebFetchToolName:
@@ -281,7 +284,19 @@ func NewToolMessageItem(
 		}
 	}
 	item.SetMessageID(messageID)
+	if planMode {
+		if base, ok := item.(interface{ SetPlanMode(bool) }); ok {
+			base.SetPlanMode(true)
+		}
+	}
 	return item
+}
+
+// SetPlanMode updates the spinner color for plan mode.
+func (t *baseToolMessageItem) SetPlanMode(planMode bool) {
+	if planMode {
+		t.anim.SetSpinnerColor(t.sty.Info)
+	}
 }
 
 // SetCompact implements the Compactable interface.
@@ -342,6 +357,10 @@ func (t *baseToolMessageItem) RawRender(width int) string {
 
 // Render renders the tool message item at the given width.
 func (t *baseToolMessageItem) Render(width int) string {
+	raw := t.RawRender(width)
+	if raw == "" {
+		return ""
+	}
 	var prefix string
 	if t.isCompact {
 		prefix = t.sty.Chat.Message.ToolCallCompact.Render()
@@ -350,7 +369,7 @@ func (t *baseToolMessageItem) Render(width int) string {
 	} else {
 		prefix = t.sty.Chat.Message.ToolCallBlurred.Render()
 	}
-	lines := strings.Split(t.RawRender(width), "\n")
+	lines := strings.Split(raw, "\n")
 	for i, ln := range lines {
 		lines[i] = prefix + ln
 	}
@@ -1068,6 +1087,11 @@ func (t *baseToolMessageItem) formatParametersForCopy() string {
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			return fmt.Sprintf("**Task:**\n%s", params.Prompt)
 		}
+	case agent.WorkerToolName:
+		var params agent.WorkerParams
+		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
+			return fmt.Sprintf("**Task:**\n%s", params.Prompt)
+		}
 	}
 
 	var params map[string]any
@@ -1117,6 +1141,8 @@ func (t *baseToolMessageItem) formatResultForCopy() string {
 	case tools.WebFetchToolName:
 		return t.formatWebFetchResultForCopy()
 	case agent.AgentToolName:
+		return t.formatAgentResultForCopy()
+	case agent.WorkerToolName:
 		return t.formatAgentResultForCopy()
 	case tools.DownloadToolName, tools.GrepToolName, tools.GlobToolName, tools.LSToolName, tools.SourcegraphToolName, tools.DiagnosticsToolName, tools.TodosToolName:
 		return fmt.Sprintf("```\n%s\n```", t.result.Content)
@@ -1436,6 +1462,8 @@ func prettifyToolName(name string) string {
 	switch name {
 	case agent.AgentToolName:
 		return "Agent"
+	case agent.WorkerToolName:
+		return "Worker"
 	case tools.BashToolName:
 		return "Bash"
 	case tools.JobOutputToolName:

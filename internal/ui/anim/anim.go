@@ -95,6 +95,11 @@ func New(opts Settings) *Anim {
 	return a
 }
 
+// SetSpinnerColor updates the spinner color.
+func (a *Anim) SetSpinnerColor(c color.Color) {
+	a.spinnerColor = c
+}
+
 // SetLabel updates the label text and re-renders it.
 func (a *Anim) SetLabel(newLabel string) {
 	a.labelWidth = lipgloss.Width(newLabel)
