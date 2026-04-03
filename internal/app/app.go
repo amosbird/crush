@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -72,6 +73,7 @@ type App struct {
 
 	// global context and cleanup functions
 	globalCtx          context.Context
+	cleanupMu          sync.Mutex
 	cleanupFuncs       []func(context.Context) error
 	agentNotifications *pubsub.Broker[notify.Notification]
 }
@@ -477,7 +479,9 @@ func (app *App) setupEvents() {
 		app.serviceEventsWG.Wait()
 		return nil
 	}
+	app.cleanupMu.Lock()
 	app.cleanupFuncs = append(app.cleanupFuncs, cleanupFunc)
+	app.cleanupMu.Unlock()
 }
 
 const subscriberSendTimeout = 2 * time.Second
@@ -561,12 +565,14 @@ func (app *App) Subscribe(program *tea.Program) {
 
 	app.tuiWG.Add(1)
 	tuiCtx, tuiCancel := context.WithCancel(app.globalCtx)
+	app.cleanupMu.Lock()
 	app.cleanupFuncs = append(app.cleanupFuncs, func(context.Context) error {
 		slog.Debug("Cancelling TUI message handler")
 		tuiCancel()
 		app.tuiWG.Wait()
 		return nil
 	})
+	app.cleanupMu.Unlock()
 	defer app.tuiWG.Done()
 
 	for {
@@ -618,7 +624,10 @@ func (app *App) Shutdown() {
 	})
 
 	// Call all cleanup functions.
-	for _, cleanup := range app.cleanupFuncs {
+	app.cleanupMu.Lock()
+	cleanups := slices.Clone(app.cleanupFuncs)
+	app.cleanupMu.Unlock()
+	for _, cleanup := range cleanups {
 		if cleanup != nil {
 			wg.Go(func() {
 				if err := cleanup(shutdownCtx); err != nil {
