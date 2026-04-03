@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -194,7 +195,8 @@ func CommandsBlocker(cmds []string) BlockFunc {
 		if len(args) == 0 {
 			return false
 		}
-		_, ok := bannedSet[strings.ToLower(args[0])]
+		name := strings.ToLower(filepath.Base(args[0]))
+		_, ok := bannedSet[name]
 		return ok
 	}
 }
