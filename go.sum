@@ -45,8 +45,8 @@ github.com/alecthomas/repr v0.5.2 h1:SU73FTI9D1P5UNtvseffFSGmdNci/O6RsqzeXJtP0Qs
 github.com/alecthomas/repr v0.5.2/go.mod h1:Fr0507jx4eOXV7AlPV6AVZLYrLIuIeSOWtW57eE/O/4=
 github.com/amosbird/bubbles/v2 v2.1.1-0.20260329024325-01e52635f8e0 h1:QnU4espqo8mnMfBoDAbd7EiKCn4TNjnOuZFA90aSq2c=
 github.com/amosbird/bubbles/v2 v2.1.1-0.20260329024325-01e52635f8e0/go.mod h1:l97h4hym2hvWBVfmJDtrEHHCtkIKeTEb3TTJ4ZOB3wY=
-github.com/amosbird/fantasy v0.17.2-0.20260330183632-1637074ad856 h1:vXYE8Wii9XiZtkfYa7Lwla4fxhsMSQvJPnCD1VkWNgQ=
-github.com/amosbird/fantasy v0.17.2-0.20260330183632-1637074ad856/go.mod h1:NPuhQ+Qh6SaMfOY7fmdfYh0o99q+YNzYm/DQdGPdhro=
+github.com/amosbird/fantasy v0.17.2-0.20260403120217-d648a1eff657 h1:68xdlbstuIkIQ5W3eVbwlHxCASINZ0CmXWBjRAa8FMo=
+github.com/amosbird/fantasy v0.17.2-0.20260403120217-d648a1eff657/go.mod h1:NPuhQ+Qh6SaMfOY7fmdfYh0o99q+YNzYm/DQdGPdhro=
 github.com/amosbird/ultraviolet v0.0.0-20260328105448-64062a4afda8 h1:uIbGcawYnsntqs30iPQbsAAXGg1bD8Ocuz7BcKNLo/4=
 github.com/amosbird/ultraviolet v0.0.0-20260328105448-64062a4afda8/go.mod h1:mkUCcxn9w9j89JJp3pOza5tmDQZPgIB75UfmQlFYvas=
 github.com/andybalholm/cascadia v1.3.2/go.mod h1:7gtRlve5FxPPgIgX36uWBX58OdBsSS6lUvCFb+h7KvU=

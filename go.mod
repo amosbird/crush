@@ -211,4 +211,4 @@ replace github.com/charmbracelet/ultraviolet => github.com/amosbird/ultraviolet 
 // Word-boundary aware Ctrl+W/Ctrl+D and CJK cursor positioning fix.
 replace charm.land/bubbles/v2 => github.com/amosbird/bubbles/v2 v2.1.1-0.20260329024325-01e52635f8e0
 
-replace charm.land/fantasy => github.com/amosbird/fantasy v0.17.2-0.20260330183632-1637074ad856
+replace charm.land/fantasy => github.com/amosbird/fantasy v0.17.2-0.20260403120217-d648a1eff657
