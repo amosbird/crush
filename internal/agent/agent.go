@@ -68,7 +68,7 @@ const (
 	// streamIdleTimeout cancels and retries an LLM streaming request when
 	// no SSE data arrives within this duration. This prevents indefinite
 	// hangs caused by provider connection issues.
-	streamIdleTimeout = 30 * time.Second
+	streamIdleTimeout = 2 * time.Minute
 )
 
 var userAgent = fmt.Sprintf("Charm-Crush/%s (https://charm.land/crush)", version.Version)
@@ -619,6 +619,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 
 		isCancelErr := errors.Is(err, context.Canceled)
 		isPermissionErr := errors.Is(err, permission.ErrorPermissionDenied)
+		slog.Debug("agent.Stream returned error",
+			"session_id", call.SessionID,
+			"error", err,
+			"error_type", fmt.Sprintf("%T", err),
+			"is_cancel", isCancelErr,
+			"is_permission", isPermissionErr,
+		)
 		if currentAssistant == nil {
 			return result, err
 		}
