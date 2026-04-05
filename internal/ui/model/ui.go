@@ -115,6 +115,13 @@ type openEditorMsg struct {
 type (
 	// cancelTimerExpiredMsg is sent when the cancel timer expires.
 	cancelTimerExpiredMsg struct{}
+	// removePlaceholderMsg is sent when the agent run finishes (success or
+	// failure) to clean up the placeholder spinner if it hasn't been replaced
+	// by a real assistant message already.
+	removePlaceholderMsg struct{}
+	// agentRunErrorMsg is sent when the agent run fails with an error that
+	// should be shown to the user. It also cleans up the placeholder spinner.
+	agentRunErrorMsg struct{ err error }
 	// userCommandsLoadedMsg is sent when user commands are loaded.
 	userCommandsLoadedMsg struct {
 		Commands []commands.CustomCommand
@@ -132,6 +139,13 @@ type (
 	sendMessageMsg struct {
 		Content     string
 		Attachments []message.Attachment
+	}
+	// sessionCreatedMsg is sent when a new session is created asynchronously
+	// so that sendMessage can proceed without blocking Update().
+	sessionCreatedMsg struct {
+		session     session.Session
+		content     string
+		attachments []message.Attachment
 	}
 
 	// closeDialogMsg is sent to close the current dialog.
@@ -622,6 +636,14 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sendMessageMsg:
 		cmds = append(cmds, m.sendMessage(msg.Content, msg.Attachments...))
 
+	case sessionCreatedMsg:
+		if msg.session.ID != "" {
+			m.session = &msg.session
+			m.syncTmuxSessionID()
+			cmds = append(cmds, m.loadSession(msg.session.ID))
+		}
+		cmds = append(cmds, m.sendMessageWithSession(msg.content, msg.attachments...))
+
 	case userCommandsLoadedMsg:
 		m.customCommands = msg.Commands
 		dia := m.dialog.Dialog(dialog.CommandsID)
@@ -956,7 +978,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 			if m.chat.Follow() {
-				m.chat.ScrollToBottom()
+				if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 			}
 		}
 	case spinner.TickMsg:
@@ -1004,6 +1028,15 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, clearInfoMsgCmd(ttl))
 	case util.ClearStatusMsg:
 		m.status.ClearInfoMsg()
+	case removePlaceholderMsg:
+		m.chat.RemoveMessage(chat.PlaceholderID)
+	case agentRunErrorMsg:
+		m.chat.RemoveMessage(chat.PlaceholderID)
+		m.status.SetInfoMsg(util.InfoMsg{
+			Type: util.InfoTypeError,
+			Msg:  msg.err.Error(),
+		})
+		cmds = append(cmds, clearInfoMsgCmd(DefaultStatusTTL))
 	case completions.CompletionItemsLoadedMsg:
 		if m.completionsOpen {
 			m.completions.SetItems(msg.Files, msg.Resources)
@@ -1138,6 +1171,7 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			cmds = append(cmds, cmd)
 		}
 	case message.Assistant:
+		m.chat.RemoveMessage(chat.PlaceholderID)
 		items := chat.ExtractMessageItems(m.com.Styles, &msg, nil)
 		for _, item := range items {
 			if animatable, ok := item.(chat.Animatable); ok {
@@ -1207,7 +1241,9 @@ func (m *UI) updateSessionMessage(msg message.Message) tea.Cmd {
 
 	if existingItem != nil {
 		if assistantItem, ok := existingItem.(*chat.AssistantMessageItem); ok {
-			assistantItem.SetMessage(&msg)
+			if cmd := assistantItem.SetMessage(&msg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 			if msg.IsFinished() {
 				m.chat.InvalidateItemHeight(msg.ID)
 			}
@@ -3213,23 +3249,28 @@ func (m *UI) sendMessage(content string, attachments ...message.Attachment) tea.
 		return util.ReportError(fmt.Errorf("coder agent is not initialized"))
 	}
 
-	var cmds []tea.Cmd
 	if !m.hasSession() {
-		newSession, err := m.com.App.Sessions.Create(context.Background(), "New Session")
-		if err != nil {
-			return util.ReportError(err)
-		}
 		if m.forceCompactMode {
 			m.isCompact = true
 		}
-		if newSession.ID != "" {
-			m.session = &newSession
-			m.syncTmuxSessionID()
-			cmds = append(cmds, m.loadSession(newSession.ID))
-		}
 		m.setState(uiChat, m.focus)
+		content := content
+		atts := slices.Clone(attachments)
+		return func() tea.Msg {
+			newSession, err := m.com.App.Sessions.Create(context.Background(), "New Session")
+			if err != nil {
+				return util.InfoMsg{Type: util.InfoTypeError, Msg: err.Error()}
+			}
+			return sessionCreatedMsg{session: newSession, content: content, attachments: atts}
+		}
 	}
 
+	return m.sendMessageWithSession(content, attachments...)
+}
+
+// sendMessageWithSession sends a message assuming m.session is already set.
+func (m *UI) sendMessageWithSession(content string, attachments ...message.Attachment) tea.Cmd {
+	var cmds []tea.Cmd
 	ctx := context.Background()
 	fileReads := slices.Clone(m.sessionFileReads)
 	sessionID := m.session.ID
@@ -3241,22 +3282,29 @@ func (m *UI) sendMessage(content string, attachments ...message.Attachment) tea.
 		return nil
 	})
 
+	// Show a placeholder spinner immediately so the user sees feedback
+	// before the backend creates the real assistant message.
+	placeholder := chat.NewPlaceholderItem(m.com.Styles)
+	m.chat.AppendMessages(placeholder)
+	cmds = append(cmds, placeholder.StartAnimation())
+	if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
 	// Capture session ID to avoid race with main goroutine updating m.session.
-	cmds = append(cmds, func() tea.Msg {
+	agentCmd := func() tea.Msg {
 		_, err := m.com.App.AgentCoordinator.Run(context.Background(), sessionID, content, attachments...)
 		if err != nil {
 			isCancelErr := errors.Is(err, context.Canceled)
 			isPermissionErr := errors.Is(err, permission.ErrorPermissionDenied)
 			if isCancelErr || isPermissionErr {
-				return nil
+				return removePlaceholderMsg{}
 			}
-			return util.InfoMsg{
-				Type: util.InfoTypeError,
-				Msg:  err.Error(),
-			}
+			return agentRunErrorMsg{err: err}
 		}
-		return nil
-	})
+		return removePlaceholderMsg{}
+	}
+	cmds = append(cmds, agentCmd)
 	return tea.Batch(cmds...)
 }
 
@@ -3506,6 +3554,15 @@ func (m *UI) openFilesDialog() tea.Cmd {
 
 // openPermissionsDialog opens the permissions dialog for a permission request.
 func (m *UI) openPermissionsDialog(perm permission.PermissionRequest) tea.Cmd {
+	// If the dialog for this exact request is already open, don't recreate it
+	// — the retry ticker in permission.Service re-publishes every 3s and
+	// recreating the dialog would reset the user's selection state.
+	if d := m.dialog.Dialog(dialog.PermissionsID); d != nil {
+		if permDlg, ok := d.(*dialog.Permissions); ok && permDlg.RequestID() == perm.ID {
+			return nil
+		}
+	}
+
 	// Close any existing permissions dialog first.
 	m.dialog.CloseDialog(dialog.PermissionsID)
 
@@ -3522,6 +3579,14 @@ func (m *UI) openPermissionsDialog(perm permission.PermissionRequest) tea.Cmd {
 
 // openAskUserDialog opens the ask_user dialog for an agent question.
 func (m *UI) openAskUserDialog(req askuser.QuestionRequest) {
+	// If the dialog for this exact request is already open, don't recreate it
+	// — the retry ticker in askuser.Service re-publishes every 500ms and
+	// recreating the dialog would wipe the user's in-progress input.
+	if d := m.dialog.Dialog(dialog.AskUserID); d != nil {
+		if askDlg, ok := d.(*dialog.AskUser); ok && askDlg.RequestID() == req.ID {
+			return
+		}
+	}
 	m.dialog.CloseDialog(dialog.AskUserID)
 	askDialog := dialog.NewAskUser(m.com, req)
 	m.dialog.OpenDialog(askDialog)
