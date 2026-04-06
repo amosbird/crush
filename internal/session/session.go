@@ -205,6 +205,29 @@ func (s *service) Fork(ctx context.Context, sessionID string) (Session, error) {
 		return Session{}, fmt.Errorf("forking messages: %w", err)
 	}
 
+	// Trim any in-progress assistant turn from the forked session.
+	// If the source had an unfinished assistant message (LLM still
+	// streaming), remove it and everything after it so the fork
+	// starts from the last cleanly completed state.
+	msgs, err := qtx.ListMessagesBySession(ctx, newID)
+	if err != nil {
+		return Session{}, fmt.Errorf("listing forked messages: %w", err)
+	}
+	firstUnfinished := -1
+	for i, msg := range msgs {
+		if msg.Role == "assistant" && !msg.FinishedAt.Valid {
+			firstUnfinished = i
+			break
+		}
+	}
+	if firstUnfinished >= 0 {
+		for i := firstUnfinished; i < len(msgs); i++ {
+			if err = qtx.DeleteMessage(ctx, msgs[i].ID); err != nil {
+				return Session{}, fmt.Errorf("trimming forked message %s: %w", msgs[i].ID, err)
+			}
+		}
+	}
+
 	if err = qtx.ForkSessionFiles(ctx, db.ForkSessionFilesParams{
 		NewSessionID:    newID,
 		SourceSessionID: sessionID,
