@@ -500,12 +500,26 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			return a.messages.Update(ctx, *currentAssistant)
 		},
 		OnRetry: func(err *fantasy.ProviderError, delay time.Duration) {
-			slog.Warn("Retrying LLM request",
-				"error", err.Message,
-				"status_code", err.StatusCode,
-				"delay", delay,
-				"session", call.SessionID,
-			)
+			if currentAssistant != nil {
+				currentAssistant.Parts = nil
+				if updateErr := a.messages.Update(ctx, *currentAssistant); updateErr != nil {
+					slog.Error("Failed to clean up assistant message on retry", "error", updateErr)
+				}
+			}
+			if err != nil {
+				slog.Warn("Retrying LLM request",
+					"error", err.Message,
+					"status_code", err.StatusCode,
+					"delay", delay,
+					"session", call.SessionID,
+				)
+			} else {
+				slog.Warn("Retrying LLM request",
+					"error", "stream idle timeout",
+					"delay", delay,
+					"session", call.SessionID,
+				)
+			}
 		},
 		OnToolCall: func(tc fantasy.ToolCallContent) error {
 			sw.Flush(ctx)
