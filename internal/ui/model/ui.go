@@ -258,6 +258,14 @@ type UI struct {
 	mcpItemRects   []mcpClickTarget
 	landingMCPRect image.Rectangle
 
+	// sidebar text selection
+	sidebarTextRect image.Rectangle // screen rect of title+id+cwd block
+	sidebarTextContent string       // rendered content for text extraction
+	sidebarMouseDown   bool
+	sidebarSelStart    [2]int // [line, col]
+	sidebarSelEnd      [2]int
+	sidebarHasSelect   bool
+
 	// sidebarLogo keeps a cached version of the sidebar sidebarLogo.
 	sidebarLogo string
 
@@ -868,7 +876,14 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			x -= m.layout.main.Min.X
 			y -= m.layout.main.Min.Y
 			if image.Pt(msg.X, msg.Y).In(m.layout.sidebar) {
-				if cmd := m.handleMCPClick(msg.X, msg.Y); cmd != nil {
+				if image.Pt(msg.X, msg.Y).In(m.sidebarTextRect) {
+					m.sidebarMouseDown = true
+					m.sidebarHasSelect = false
+					line := msg.Y - m.sidebarTextRect.Min.Y
+					col := msg.X - m.sidebarTextRect.Min.X
+					m.sidebarSelStart = [2]int{line, col}
+					m.sidebarSelEnd = [2]int{line, col}
+				} else if cmd := m.handleMCPClick(msg.X, msg.Y); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
 			} else if handled, cmd := m.chat.HandleMouseDown(x, y); handled {
@@ -888,6 +903,13 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch m.state {
 		case uiChat:
+			if m.sidebarMouseDown {
+				line := msg.Y - m.sidebarTextRect.Min.Y
+				col := msg.X - m.sidebarTextRect.Min.X
+				m.sidebarSelEnd = [2]int{line, col}
+				m.sidebarHasSelect = m.sidebarSelStart != m.sidebarSelEnd
+				return m, tea.Batch(cmds...)
+			}
 			if msg.Y <= 0 {
 				if cmd := m.chat.ScrollByAndAnimate(-1); cmd != nil {
 					cmds = append(cmds, cmd)
@@ -931,6 +953,16 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch m.state {
 		case uiChat:
+			if m.sidebarMouseDown {
+				m.sidebarMouseDown = false
+				if m.sidebarHasSelect {
+					if text := m.sidebarSelectedText(); text != "" {
+						m.sidebarHasSelect = false
+						cmds = append(cmds, common.CopyToClipboard(text, "Copied to clipboard"))
+					}
+				}
+				return m, tea.Batch(cmds...)
+			}
 			x, y := msg.X, msg.Y
 			// Adjust for chat area position
 			x -= m.layout.main.Min.X
@@ -1767,6 +1799,9 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionOpenSearchResult:
 		m.dialog.CloseDialog(dialog.SessionSearchID)
 		cmds = append(cmds, m.openSearchResult(msg.SearchResult))
+	case dialog.ActionOpenDirectory:
+		m.dialog.CloseDialog(dialog.OpenDirectoryID)
+		cmds = append(cmds, m.openDirectory(msg.Path))
 	default:
 		cmds = append(cmds, util.CmdHandler(msg))
 	}
@@ -1835,6 +1870,11 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			return true
 		case key.Matches(msg, m.keyMap.SessionSearch):
 			if cmd := m.openSessionSearchDialog(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return true
+		case key.Matches(msg, m.keyMap.OpenDirectory):
+			if cmd := m.openOpenDirectoryDialog(); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 			return true
@@ -3483,6 +3523,10 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openSessionSearchDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.OpenDirectoryID:
+		if cmd := m.openOpenDirectoryDialog(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case dialog.QuitID:
 		if cmd := m.openQuitDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -3628,6 +3672,34 @@ func (m *UI) openSessionSearchDialog() tea.Cmd {
 	d := dialog.NewSessionSearch(m.com)
 	m.dialog.OpenDialog(d)
 	return d.InitialSearchCmd()
+}
+
+// openOpenDirectoryDialog opens the Open Directory dialog.
+func (m *UI) openOpenDirectoryDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.OpenDirectoryID) {
+		m.dialog.BringToFront(dialog.OpenDirectoryID)
+		return nil
+	}
+	d := dialog.NewOpenDirectory(m.com)
+	m.dialog.OpenDialog(d)
+	return nil
+}
+
+// openDirectory opens crush in a new mux window at the given directory path.
+func (m *UI) openDirectory(path string) tea.Cmd {
+	return func() tea.Msg {
+		if !m.com.Mux.Available() {
+			return util.NewInfoMsg("Requires a terminal multiplexer (tmux/psmux)")
+		}
+		exe, err := os.Executable()
+		if err != nil {
+			return util.NewErrorMsg(err)
+		}
+		if err := m.com.Mux.NewWindow(path, exe); err != nil {
+			return util.NewErrorMsg(err)
+		}
+		return nil
+	}
 }
 
 // openSearchResult opens a session from a cross-project search result.

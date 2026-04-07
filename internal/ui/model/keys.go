@@ -69,6 +69,7 @@ type KeyMap struct {
 	Suspend       key.Binding
 	Sessions      key.Binding
 	SessionSearch key.Binding
+	OpenDirectory key.Binding
 	YoloMode      key.Binding
 	ForkSession   key.Binding
 	NewWindow     key.Binding
@@ -104,6 +105,10 @@ func DefaultKeyMap() KeyMap {
 		SessionSearch: key.NewBinding(
 			key.WithKeys("alt+shift+s", "alt+S"),
 			key.WithHelp("alt+S", "search sessions"),
+		),
+		OpenDirectory: key.NewBinding(
+			key.WithKeys("alt+shift+g", "alt+G"),
+			key.WithHelp("alt+G", "open directory"),
 		),
 		YoloMode: key.NewBinding(
 			key.WithKeys("ctrl+y"),
