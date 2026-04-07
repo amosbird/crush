@@ -26,7 +26,17 @@ Write-Host "Installing crush $($release.tag_name) ($arch)..."
 # Download and extract
 $tmp = Join-Path $env:TEMP "crush-install-$([guid]::NewGuid().ToString('N').Substring(0,8)).zip"
 Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmp
-if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+
+# Stop any running crush processes before replacing the binary
+$procs = Get-Process crush -ErrorAction SilentlyContinue
+if ($procs) {
+    $procs | Stop-Process -Force -ErrorAction SilentlyContinue
+    $procs | Wait-Process -ErrorAction SilentlyContinue
+}
+
+if (Test-Path $installDir) {
+    Remove-Item $installDir -Recurse -Force
+}
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 Expand-Archive -Path $tmp -DestinationPath $installDir -Force
 Remove-Item $tmp
