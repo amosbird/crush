@@ -1,14 +1,11 @@
 package dialog
 
 import (
-	"time"
-
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/search"
 	"github.com/charmbracelet/crush/internal/ui/list"
 	"github.com/charmbracelet/crush/internal/ui/styles"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/dustin/go-humanize"
 	"github.com/sahilm/fuzzy"
 )
 
@@ -56,7 +53,7 @@ func (s *SearchResultItem) Render(width int) string {
 		title = "● " + title
 	}
 
-	info := humanize.Time(time.Unix(s.UpdatedAt/1000, 0))
+	info := s.Date
 	if s.MessageCount != "" {
 		info = s.MessageCount + " · " + info
 	}
@@ -65,7 +62,7 @@ func (s *SearchResultItem) Render(width int) string {
 		ItemBlurred:     s.t.Dialog.NormalItem,
 		ItemFocused:     s.t.Dialog.SelectedItem,
 		InfoTextBlurred: s.t.Subtle,
-		InfoTextFocused: s.t.Base,
+		InfoTextFocused: s.t.Base.Foreground(s.t.Dialog.SelectedItem.GetForeground()),
 	}
 
 	line1 := renderItem(st, title, info, s.focused, width, s.cache, &s.m)
