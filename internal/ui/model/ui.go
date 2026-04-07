@@ -2710,6 +2710,14 @@ func (m *UI) updateLayoutAndSize() {
 		m.layout = m.generateLayout(m.width, m.height)
 		m.updateSize()
 	}
+
+	// Expose the chat content area to dialogs via Common.
+	m.com.ChatArea = image.Rect(
+		m.layout.main.Min.X,
+		m.layout.main.Min.Y,
+		m.layout.main.Max.X,
+		m.layout.editor.Max.Y,
+	)
 }
 
 // handleTextareaHeightChange checks whether the textarea height changed and,

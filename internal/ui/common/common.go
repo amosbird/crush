@@ -30,6 +30,7 @@ type Common struct {
 	App       *app.App
 	Styles    *styles.Styles
 	Mux       *mux.Mux
+	ChatArea  image.Rectangle
 }
 
 // Config returns the pure-data configuration associated with this [Common] instance.
