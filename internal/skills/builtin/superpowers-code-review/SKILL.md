@@ -1,5 +1,6 @@
 ---
 name: superpowers-code-review
+agent: superpowers
 description: "Superpowers code review workflow: pre-submission self-review checklist and structured review process. Activate when reviewing code, preparing to submit changes, or when the user asks for a code review."
 ---
 

@@ -1,5 +1,6 @@
 ---
 name: superpowers-debugging
+agent: superpowers
 description: "Superpowers systematic debugging: 4-phase root cause investigation. Activate when encountering test failures, unexpected behavior, crashes, or any bug that is not immediately obvious."
 ---
 

@@ -29,6 +29,7 @@ var namePattern = regexp.MustCompile(`^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$`)
 type Skill struct {
 	Name          string            `yaml:"name" json:"name"`
 	Description   string            `yaml:"description" json:"description"`
+	Agent         string            `yaml:"agent,omitempty" json:"agent,omitempty"`
 	License       string            `yaml:"license,omitempty" json:"license,omitempty"`
 	Compatibility string            `yaml:"compatibility,omitempty" json:"compatibility,omitempty"`
 	Metadata      map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
@@ -229,6 +230,18 @@ func Filter(all []*Skill, disabled []string) []*Skill {
 	result := make([]*Skill, 0, len(all))
 	for _, s := range all {
 		if !disabledSet[s.Name] {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+// FilterByAgent returns skills visible to the given agent. A skill is visible
+// if its Agent field is empty (available to all agents) or matches the agent.
+func FilterByAgent(all []*Skill, agent string) []*Skill {
+	result := make([]*Skill, 0, len(all))
+	for _, s := range all {
+		if s.Agent == "" || s.Agent == agent {
 			result = append(result, s)
 		}
 	}

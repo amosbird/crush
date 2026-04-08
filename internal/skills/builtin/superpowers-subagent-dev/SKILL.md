@@ -1,5 +1,6 @@
 ---
 name: superpowers-subagent-dev
+agent: superpowers
 description: "Superpowers subagent-driven development: dispatch fresh workers per task with two-stage review. Activate when executing a multi-task plan or implementing a feature with multiple independent components."
 ---
 

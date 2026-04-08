@@ -228,6 +228,9 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, store *
 	// Filter out disabled skills.
 	allSkills = skills.Filter(allSkills, cfg.Options.DisabledSkills)
 
+	// Filter skills by agent affinity.
+	allSkills = skills.FilterByAgent(allSkills, p.name)
+
 	if len(allSkills) > 0 {
 		availSkillXML = skills.ToPromptXML(allSkills)
 	}

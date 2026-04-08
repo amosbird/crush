@@ -1,5 +1,6 @@
 ---
 name: superpowers-tdd
+agent: superpowers
 description: "Superpowers TDD workflow: Red-Green-Refactor cycle with iron-law discipline. Activate when adding new functionality, fixing bugs, or when the user asks for test-driven development."
 ---
 

@@ -1,5 +1,6 @@
 ---
 name: superpowers-design
+agent: superpowers
 description: "Superpowers design-first workflow: explore, design, confirm before coding. Activate for non-trivial features, architectural changes, or when the user asks you to design/plan something."
 ---
 

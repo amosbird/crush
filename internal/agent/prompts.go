@@ -17,6 +17,9 @@ var plannerPromptTmpl []byte
 //go:embed templates/superpowers.md.tpl
 var superpowersPromptTmpl []byte
 
+//go:embed templates/gsd.md.tpl
+var gsdPromptTmpl []byte
+
 //go:embed templates/task.md.tpl
 var taskPromptTmpl []byte
 
@@ -50,6 +53,14 @@ func superpowersPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	return systemPrompt, nil
 }
 
+func gsdPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
+	systemPrompt, err := prompt.NewPrompt("gsd", string(gsdPromptTmpl), opts...)
+	if err != nil {
+		return nil, err
+	}
+	return systemPrompt, nil
+}
+
 func taskPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	systemPrompt, err := prompt.NewPrompt("task", string(taskPromptTmpl), opts...)
 	if err != nil {
@@ -71,6 +82,7 @@ var agentPromptFunc = map[string]func(...prompt.Option) (*prompt.Prompt, error){
 	config.AgentCoder:       coderPrompt,
 	config.AgentPlanner:     plannerPrompt,
 	config.AgentSuperpowers: superpowersPrompt,
+	config.AgentGSD:         gsdPrompt,
 }
 
 func InitializePrompt(cfg *config.ConfigStore) (string, error) {

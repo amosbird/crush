@@ -63,6 +63,7 @@ const (
 	AgentCoder       string = "coder"
 	AgentPlanner     string = "planner"
 	AgentSuperpowers string = "superpowers"
+	AgentGSD         string = "gsd"
 	AgentTask        string = "task"
 	AgentWorker      string = "worker"
 )
@@ -70,7 +71,7 @@ const (
 // TopLevelAgents returns the agent IDs that can be selected as the main agent
 // by the user (as opposed to sub-agents like task/worker).
 func TopLevelAgents() []string {
-	return []string{AgentCoder, AgentPlanner, AgentSuperpowers}
+	return []string{AgentCoder, AgentPlanner, AgentSuperpowers, AgentGSD}
 }
 
 type SelectedModel struct {
@@ -588,6 +589,15 @@ func (c *Config) SetupAgents() {
 			ID:           AgentSuperpowers,
 			Name:         "Superpowers",
 			Description:  "Methodology-driven agent: design first, test first, debug systematically, prove completion. Inspired by obra/superpowers.",
+			Model:        SelectedModelTypeLarge,
+			ContextPaths: c.Options.ContextPaths,
+			AllowedTools: allowedTools,
+		},
+
+		AgentGSD: {
+			ID:           AgentGSD,
+			Name:         "GSD",
+			Description:  "Get Shit Done: spec-driven development with context engineering, wave-based parallel execution, and goal-backward verification.",
 			Model:        SelectedModelTypeLarge,
 			ContextPaths: c.Options.ContextPaths,
 			AllowedTools: allowedTools,

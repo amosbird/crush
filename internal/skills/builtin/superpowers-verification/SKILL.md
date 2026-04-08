@@ -1,5 +1,6 @@
 ---
 name: superpowers-verification
+agent: superpowers
 description: "Superpowers verification workflow: prove completion with evidence, not assumptions. Activate before declaring any task done."
 ---
 

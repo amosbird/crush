@@ -1,5 +1,6 @@
 ---
 name: superpowers-planning
+agent: superpowers
 description: "Superpowers planning workflow: write detailed implementation plans with bite-sized tasks. Activate when breaking down a complex feature, multi-file change, or when the user asks for a plan."
 ---
 
