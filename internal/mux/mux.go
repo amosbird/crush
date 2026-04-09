@@ -14,7 +14,8 @@ import (
 // Mux represents a terminal multiplexer that can manage windows and
 // pane-level options.  A nil *Mux means no multiplexer is available.
 type Mux struct {
-	bin string // absolute path or bare name of the mux binary
+	bin    string // absolute path or bare name of the mux binary
+	paneID string // $TMUX_PANE captured at startup
 }
 
 // Detect returns a *Mux for the current environment, or nil if crush
@@ -24,9 +25,10 @@ func Detect() *Mux {
 		return nil
 	}
 	// Both tmux and psmux set $TMUX and accept the same command syntax.
+	paneID := os.Getenv("TMUX_PANE")
 	for _, name := range []string{"tmux", "psmux"} {
 		if p, err := exec.LookPath(name); err == nil {
-			return &Mux{bin: p}
+			return &Mux{bin: p, paneID: paneID}
 		}
 	}
 	return nil
@@ -54,7 +56,12 @@ func (m *Mux) SetPaneOption(key, value string) {
 		return
 	}
 	go func() {
-		_ = m.run("set-option", "-p", key, value)
+		args := []string{"set-option", "-p"}
+		if m.paneID != "" {
+			args = append(args, "-t", m.paneID)
+		}
+		args = append(args, key, value)
+		_ = m.run(args...)
 	}()
 }
 
@@ -64,7 +71,11 @@ func (m *Mux) SetPaneTitle(title string) {
 		return
 	}
 	go func() {
-		_ = m.run("select-pane", "-T", title)
+		args := []string{"select-pane", "-T", title}
+		if m.paneID != "" {
+			args = append(args, "-t", m.paneID)
+		}
+		_ = m.run(args...)
 	}()
 }
 
