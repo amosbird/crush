@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -44,6 +45,9 @@ func (m *Mux) NewWindow(cwd string, args ...string) error {
 		return nil
 	}
 	cmdArgs := []string{"new-window", "-c", cwd}
+	if name := filepath.Base(filepath.Clean(cwd)); name != "." && name != string(filepath.Separator) && name != "" {
+		cmdArgs = append(cmdArgs, "-n", name)
+	}
 	cmdArgs = append(cmdArgs, args...)
 	return m.run(cmdArgs...)
 }
