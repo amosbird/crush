@@ -606,8 +606,8 @@ func DefaultStyles() Styles {
 			Suggestion:  base.Foreground(fgSubtle),
 		},
 		Cursor: textinput.CursorStyle{
-			Color: secondary,
-			Shape: tea.CursorBlock,
+			Color: lipgloss.Color("#00ff00"),
+			Shape: tea.CursorBar,
 			Blink: true,
 		},
 	}
