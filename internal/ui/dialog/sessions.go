@@ -2,6 +2,8 @@ package dialog
 
 import (
 	"context"
+	"image"
+	"path/filepath"
 	"strings"
 
 	"charm.land/bubbles/v2/help"
@@ -9,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/crush/internal/search"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/ui/common"
 	"github.com/charmbracelet/crush/internal/ui/list"
@@ -28,6 +31,12 @@ const (
 	sessionsModeUpdating
 )
 
+// sessionPreviewLoadedMsg carries preview lines for the sessions dialog.
+type sessionPreviewLoadedMsg struct {
+	sessionID string
+	lines     []string
+}
+
 // Session is a session selector dialog.
 type Session struct {
 	com                *common.Common
@@ -36,8 +45,17 @@ type Session struct {
 	input              textinput.Model
 	selectedSessionInx int
 	sessions           []session.Session
+	activeIDs          []string
 
 	sessionsMode sessionsMode
+	alwaysDelete bool
+
+	// preview state
+	preview     []string
+	previewSID  string
+	previewRow  int
+	previewRect image.Rectangle
+	dbPath      string
 
 	keyMap struct {
 		Select        key.Binding
@@ -50,6 +68,7 @@ type Session struct {
 		ConfirmRename key.Binding
 		CancelRename  key.Binding
 		ConfirmDelete key.Binding
+		AlwaysDelete  key.Binding
 		CancelDelete  key.Binding
 		Close         key.Binding
 	}
@@ -68,6 +87,7 @@ func NewSessions(com *common.Common, selectedSessionID string) (*Session, error)
 	}
 
 	s.sessions = sessions
+	s.activeIDs = com.Mux.ActiveCrushSessions()
 	for i, sess := range sessions {
 		if sess.ID == selectedSessionID {
 			s.selectedSessionInx = i
@@ -75,17 +95,19 @@ func NewSessions(com *common.Common, selectedSessionID string) (*Session, error)
 		}
 	}
 
+	s.dbPath = filepath.Join(com.Workspace.Config().Options.DataDirectory, "crush.db")
+
 	help := help.New()
 	help.Styles = com.Styles.DialogHelpStyles()
 
 	s.help = help
-	s.list = list.NewFilterableList(sessionItems(com.Styles, sessionsModeNormal, sessions...)...)
+	s.list = list.NewFilterableList(sessionItems(com.Styles, sessionsModeNormal, s.activeIDs, sessions...)...)
 	s.list.Focus()
 	s.list.SetSelected(s.selectedSessionInx)
 
 	s.input = textinput.New()
 	s.input.SetVirtualCursor(false)
-	s.input.Placeholder = "Enter session name"
+	s.input.Placeholder = "Filter sessions…"
 	s.input.SetStyles(com.Styles.TextInput)
 	s.input.Focus()
 
@@ -106,8 +128,8 @@ func NewSessions(com *common.Common, selectedSessionID string) (*Session, error)
 		key.WithHelp("↑↓", "choose"),
 	)
 	s.keyMap.Delete = key.NewBinding(
-		key.WithKeys("ctrl+x"),
-		key.WithHelp("ctrl+x", "delete"),
+		key.WithKeys("ctrl+d"),
+		key.WithHelp("ctrl+d", "delete"),
 	)
 	s.keyMap.Rename = key.NewBinding(
 		key.WithKeys("ctrl+r"),
@@ -125,8 +147,12 @@ func NewSessions(com *common.Common, selectedSessionID string) (*Session, error)
 		key.WithKeys("y"),
 		key.WithHelp("y", "delete"),
 	)
+	s.keyMap.AlwaysDelete = key.NewBinding(
+		key.WithKeys("a"),
+		key.WithHelp("a", "always"),
+	)
 	s.keyMap.CancelDelete = key.NewBinding(
-		key.WithKeys("n", "ctrl+g"),
+		key.WithKeys("n", "ctrl+g", "esc"),
 		key.WithHelp("n", "cancel"),
 	)
 	s.keyMap.Fork = key.NewBinding(
@@ -138,6 +164,12 @@ func NewSessions(com *common.Common, selectedSessionID string) (*Session, error)
 	return s, nil
 }
 
+// InitialPreviewCmd returns a command that loads the preview for the initially
+// selected session.
+func (s *Session) InitialPreviewCmd() tea.Cmd {
+	return s.loadPreviewCmd()
+}
+
 // ID implements Dialog.
 func (s *Session) ID() string {
 	return SessionsID
@@ -146,29 +178,47 @@ func (s *Session) ID() string {
 // HandleMsg implements Dialog.
 func (s *Session) HandleMsg(msg tea.Msg) Action {
 	switch msg := msg.(type) {
+	case sessionPreviewLoadedMsg:
+		if msg.sessionID == s.previewSID {
+			s.preview = msg.lines
+			s.previewRow = 0
+		}
+		return nil
+
+	case tea.MouseWheelMsg:
+		pt := image.Pt(msg.X, msg.Y)
+		if pt.In(s.previewRect) {
+			switch msg.Button {
+			case tea.MouseWheelUp:
+				s.previewRow = max(0, s.previewRow-3)
+			case tea.MouseWheelDown:
+				s.previewRow += 3
+			}
+		}
+		return nil
+
 	case tea.KeyPressMsg:
 		switch s.sessionsMode {
 		case sessionsModeDeleting:
 			switch {
-			case key.Matches(msg, s.keyMap.ConfirmDelete):
-				action := s.confirmDeleteSession()
-				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.sessions...)...)
-				s.list.SelectFirst()
-				s.list.ScrollToSelected()
-				return action
+			case key.Matches(msg, s.keyMap.ConfirmDelete), key.Matches(msg, s.keyMap.AlwaysDelete):
+				if key.Matches(msg, s.keyMap.AlwaysDelete) {
+					s.alwaysDelete = true
+				}
+				return s.confirmDeleteSession()
 			case key.Matches(msg, s.keyMap.CancelDelete):
 				s.sessionsMode = sessionsModeNormal
-				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.sessions...)...)
+				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.activeIDs, s.sessions...)...)
 			}
 		case sessionsModeUpdating:
 			switch {
 			case key.Matches(msg, s.keyMap.ConfirmRename):
 				action := s.confirmRenameSession()
-				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.sessions...)...)
+				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.activeIDs, s.sessions...)...)
 				return action
 			case key.Matches(msg, s.keyMap.CancelRename):
 				s.sessionsMode = sessionsModeNormal
-				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.sessions...)...)
+				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.activeIDs, s.sessions...)...)
 			default:
 				item := s.list.SelectedItem()
 				if item == nil {
@@ -184,13 +234,19 @@ func (s *Session) HandleMsg(msg tea.Msg) Action {
 				return ActionClose{}
 			case key.Matches(msg, s.keyMap.Rename):
 				s.sessionsMode = sessionsModeUpdating
-				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeUpdating, s.sessions...)...)
+				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeUpdating, s.activeIDs, s.sessions...)...)
 			case key.Matches(msg, s.keyMap.Delete):
+				if s.isSelectedSessionActive() {
+					return ActionCmd{util.ReportWarn("Cannot delete an active session")}
+				}
 				if s.isCurrentSessionBusy() {
 					return ActionCmd{util.ReportWarn("Agent is busy, please wait...")}
 				}
+				if s.alwaysDelete {
+					return s.confirmDeleteSession()
+				}
 				s.sessionsMode = sessionsModeDeleting
-				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeDeleting, s.sessions...)...)
+				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeDeleting, s.activeIDs, s.sessions...)...)
 			case key.Matches(msg, s.keyMap.Previous):
 				s.list.Focus()
 				if s.list.IsSelectedFirst() {
@@ -199,6 +255,7 @@ func (s *Session) HandleMsg(msg tea.Msg) Action {
 					s.list.SelectPrev()
 				}
 				s.list.ScrollToSelected()
+				return ActionCmd{s.loadPreviewCmd()}
 			case key.Matches(msg, s.keyMap.Next):
 				s.list.Focus()
 				if s.list.IsSelectedLast() {
@@ -207,6 +264,7 @@ func (s *Session) HandleMsg(msg tea.Msg) Action {
 					s.list.SelectNext()
 				}
 				s.list.ScrollToSelected()
+				return ActionCmd{s.loadPreviewCmd()}
 			case key.Matches(msg, s.keyMap.Select):
 				if item := s.list.SelectedItem(); item != nil {
 					sessionItem := item.(*SessionItem)
@@ -224,11 +282,32 @@ func (s *Session) HandleMsg(msg tea.Msg) Action {
 				s.list.SetFilter(value)
 				s.list.ScrollToTop()
 				s.list.SetSelected(0)
-				return ActionCmd{cmd}
+				return ActionCmd{tea.Batch(cmd, s.loadPreviewCmd())}
 			}
 		}
 	}
 	return nil
+}
+
+// loadPreviewCmd loads the preview for the currently selected session.
+func (s *Session) loadPreviewCmd() tea.Cmd {
+	item := s.list.SelectedItem()
+	if item == nil {
+		s.preview = nil
+		s.previewSID = ""
+		return nil
+	}
+	sessionItem := item.(*SessionItem)
+	sid := sessionItem.Session.ID
+	if sid == s.previewSID {
+		return nil
+	}
+	s.previewSID = sid
+	dbPath := s.dbPath
+	return func() tea.Msg {
+		lines, _ := search.Preview(dbPath, sid)
+		return sessionPreviewLoadedMsg{sessionID: sid, lines: lines}
+	}
 }
 
 // Cursor returns the cursor position relative to the dialog.
@@ -239,15 +318,28 @@ func (s *Session) Cursor() *tea.Cursor {
 // Draw implements [Dialog].
 func (s *Session) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	t := s.com.Styles
-	width := max(0, min(defaultDialogMaxWidth, area.Dx()-t.Dialog.View.GetHorizontalBorderSize()))
-	height := max(0, min(defaultDialogHeight, area.Dy()-t.Dialog.View.GetVerticalBorderSize()))
-	innerWidth := width - t.Dialog.View.GetHorizontalFrameSize()
+
+	// Align left edge to chat content area.
+	chatArea := s.com.ChatArea
+	startX := chatArea.Min.X
+	if startX <= area.Min.X {
+		startX = area.Min.X + area.Dx()/4
+	}
+	availW := area.Max.X - startX - 1
+
+	// Left panel: standard dialog layout.
+	leftWidth := max(0, min(defaultDialogMaxWidth, availW-t.Dialog.View.GetHorizontalBorderSize()))
+	dialogWidth := leftWidth
+	innerWidth := dialogWidth - t.Dialog.View.GetHorizontalFrameSize()
+
+	totalHeight := max(0, min(defaultDialogHeight, area.Dy()-4))
 	heightOffset := t.Dialog.Title.GetVerticalFrameSize() + titleContentHeight +
 		t.Dialog.InputPrompt.GetVerticalFrameSize() + inputContentHeight +
 		t.Dialog.HelpView.GetVerticalFrameSize() +
 		t.Dialog.View.GetVerticalFrameSize()
-	s.input.SetWidth(max(0, innerWidth-t.Dialog.InputPrompt.GetHorizontalFrameSize()-1)) // (1) cursor padding
-	s.list.SetSize(innerWidth, height-heightOffset)
+
+	s.input.SetWidth(max(0, innerWidth-t.Dialog.InputPrompt.GetHorizontalFrameSize()-1))
+	s.list.SetSize(innerWidth, totalHeight-heightOffset)
 	s.help.SetWidth(innerWidth)
 
 	// This makes it so we do not scroll the list if we don't have to
@@ -259,7 +351,7 @@ func (s *Session) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 
 	var cur *tea.Cursor
-	rc := NewRenderContext(t, width)
+	rc := NewRenderContext(t, dialogWidth)
 	rc.Title = "Sessions"
 	switch s.sessionsMode {
 	case sessionsModeDeleting:
@@ -291,7 +383,6 @@ func (s *Session) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		dialogStyle := t.Dialog.Sessions.RenamingView
 		inputStyle := t.Dialog.InputPrompt
 
-		// Adjust cursor position to account for dialog layout + message
 		cur.X += inputStyle.GetBorderLeftSize() +
 			inputStyle.GetMarginLeft() +
 			inputStyle.GetPaddingLeft() +
@@ -309,7 +400,6 @@ func (s *Session) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 			dialogStyle.GetBorderTopSize() +
 			lipgloss.Height(message) - 1
 
-		// move the cursor by one down until we see the selectedIndex
 		for ; start <= end && start != selectedIndex && selectedIndex > -1; start++ {
 			cur.Y += 1
 		}
@@ -322,10 +412,64 @@ func (s *Session) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	rc.AddPart(listView)
 	rc.Help = s.help.View(s)
 
-	view := rc.Render()
+	leftView := rc.Render()
+	_, leftH := lipgloss.Size(leftView)
 
-	DrawCenterCursor(scr, area, view, cur)
+	// Preview: taller than left panel, fill vertical space with top margin.
+	const previewTopMargin = 5
+	previewH := max(leftH, area.Dy()-4-previewTopMargin)
+	rightWidth := max(0, availW-leftWidth)
+	previewView := s.buildPreview(rightWidth, previewH)
+
+	previewStartY := area.Min.Y + previewTopMargin + max(0, (area.Dy()-previewTopMargin-previewH)/2)
+	leftStartY := previewStartY + max(0, (previewH-leftH)/2)
+
+	// Draw left.
+	leftRect := image.Rect(startX, leftStartY, startX+leftWidth, leftStartY+leftH)
+	uv.NewStyledString(leftView).Draw(scr, leftRect)
+
+	// Draw right.
+	s.previewRect = image.Rect(startX+leftWidth, previewStartY, startX+leftWidth+rightWidth, previewStartY+previewH)
+	uv.NewStyledString(previewView).Draw(scr, s.previewRect)
+
+	if cur != nil {
+		cur.X += startX
+		cur.Y += leftStartY
+	}
 	return cur
+}
+
+// buildPreview builds the preview panel with a rounded border.
+func (s *Session) buildPreview(width, height int) string {
+	borderW := max(0, width-2)
+	borderH := max(0, height-2)
+
+	border := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(s.com.Styles.Subtle.GetForeground()).
+		Width(borderW).
+		Height(borderH)
+
+	if len(s.preview) == 0 {
+		return border.Render("")
+	}
+
+	tokens := search.TokenizeQuery(s.input.Value())
+	innerW := max(1, borderW-2)
+
+	maxRow := max(0, len(s.preview)-borderH)
+	s.previewRow = max(0, min(s.previewRow, maxRow))
+
+	endLine := min(len(s.preview), s.previewRow+borderH)
+	visible := s.preview[s.previewRow:endLine]
+
+	var lines []string
+	for _, line := range visible {
+		cut := centerTruncate(line, innerW, tokens)
+		lines = append(lines, highlightLine(cut, tokens))
+	}
+
+	return border.Render(strings.Join(lines, "\n"))
 }
 
 func (s *Session) selectedSessionItem() *SessionItem {
@@ -337,13 +481,19 @@ func (s *Session) selectedSessionItem() *SessionItem {
 
 func (s *Session) confirmDeleteSession() Action {
 	sessionItem := s.selectedSessionItem()
+	idx := s.list.Selected()
 	s.sessionsMode = sessionsModeNormal
 	if sessionItem == nil {
 		return nil
 	}
 
 	s.removeSession(sessionItem.ID())
-	return ActionCmd{s.deleteSessionCmd(sessionItem.ID())}
+	s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.activeIDs, s.sessions...)...)
+	if s.list.Len() > 0 {
+		s.list.SetSelected(min(idx, s.list.Len()-1))
+	}
+	s.previewSID = ""
+	return ActionCmd{tea.Batch(s.deleteSessionCmd(sessionItem.ID()), s.loadPreviewCmd())}
 }
 
 func (s *Session) removeSession(id string) {
@@ -403,6 +553,14 @@ func (s *Session) updateSessionCmd(session session.Session) tea.Cmd {
 	}
 }
 
+func (s *Session) isSelectedSessionActive() bool {
+	sessionItem := s.selectedSessionItem()
+	if sessionItem == nil {
+		return false
+	}
+	return sessionItem.active
+}
+
 func (s *Session) isCurrentSessionBusy() bool {
 	sessionItem := s.selectedSessionItem()
 	if sessionItem == nil {
@@ -422,6 +580,7 @@ func (s *Session) ShortHelp() []key.Binding {
 	case sessionsModeDeleting:
 		return []key.Binding{
 			s.keyMap.ConfirmDelete,
+			s.keyMap.AlwaysDelete,
 			s.keyMap.CancelDelete,
 		}
 	case sessionsModeUpdating:
@@ -457,6 +616,7 @@ func (s *Session) FullHelp() [][]key.Binding {
 	case sessionsModeDeleting:
 		slice = []key.Binding{
 			s.keyMap.ConfirmDelete,
+			s.keyMap.AlwaysDelete,
 			s.keyMap.CancelDelete,
 		}
 	case sessionsModeUpdating:

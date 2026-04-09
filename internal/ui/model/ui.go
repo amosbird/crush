@@ -3680,7 +3680,7 @@ func (m *UI) openSessionsDialog() tea.Cmd {
 	}
 
 	m.dialog.OpenDialog(dialog)
-	return nil
+	return dialog.InitialPreviewCmd()
 }
 
 // openSessionSearchDialog opens the cross-project session search dialog.

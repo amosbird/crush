@@ -36,6 +36,7 @@ type SessionItem struct {
 	cache            map[int]string
 	updateTitleInput textinput.Model
 	focused          bool
+	active           bool
 }
 
 var _ ListItem = &SessionItem{}
@@ -75,7 +76,15 @@ func (s *SessionItem) Cursor() *tea.Cursor {
 
 // Render returns the string representation of the session item.
 func (s *SessionItem) Render(width int) string {
+	title := s.Title
+	if s.active {
+		title = "● " + title
+	}
+
 	info := humanize.Time(time.Unix(s.UpdatedAt, 0))
+	if s.MessageCount > 0 {
+		info = fmt.Sprintf("%d msgs · %s", s.MessageCount, info)
+	}
 	styles := ListItemStyles{
 		ItemBlurred:     s.t.Dialog.NormalItem,
 		ItemFocused:     s.t.Dialog.SelectedItem,
@@ -98,7 +107,7 @@ func (s *SessionItem) Render(width int) string {
 		}
 	}
 
-	return renderItem(styles, s.Title, info, s.focused, width, s.cache, &s.m)
+	return renderItem(styles, title, info, s.focused, width, s.cache, &s.m)
 }
 
 type ListItemStyles struct {
@@ -184,10 +193,15 @@ func (s *SessionItem) SetFocused(focused bool) {
 
 // sessionItems takes a slice of [session.Session]s and convert them to a slice
 // of [ListItem]s.
-func sessionItems(t *styles.Styles, mode sessionsMode, sessions ...session.Session) []list.FilterableItem {
+func sessionItems(t *styles.Styles, mode sessionsMode, activeIDs []string, sessions ...session.Session) []list.FilterableItem {
+	active := make(map[string]struct{}, len(activeIDs))
+	for _, id := range activeIDs {
+		active[id] = struct{}{}
+	}
 	items := make([]list.FilterableItem, len(sessions))
 	for i, s := range sessions {
-		item := &SessionItem{Session: s, t: t, sessionsMode: mode}
+		_, isActive := active[s.ID]
+		item := &SessionItem{Session: s, t: t, sessionsMode: mode, active: isActive}
 		if mode == sessionsModeUpdating {
 			item.updateTitleInput = textinput.New()
 			item.updateTitleInput.SetVirtualCursor(false)
