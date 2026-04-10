@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -163,6 +164,10 @@ func (w *ClientWorkspace) ListAllUserMessages(ctx context.Context) ([]message.Me
 		return nil, err
 	}
 	return protoToMessages(msgs), nil
+}
+
+func (w *ClientWorkspace) DeleteMessage(_ context.Context, _ string) error {
+	return errors.New("delete message not supported in client mode")
 }
 
 // -- Agent --

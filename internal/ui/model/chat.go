@@ -2,6 +2,7 @@ package model
 
 import (
 	"image"
+	"sort"
 	"strings"
 	"time"
 
@@ -596,21 +597,45 @@ func (m *Chat) RemoveMessage(id string) {
 		return
 	}
 
-	// Remove from list
-	m.list.RemoveItem(idx)
+	// Collect all indices to remove: primary + related tool calls + info item.
+	toRemove := map[int]string{idx: id}
+	if _, ok := m.list.ItemAt(idx).(chat.MessageItem); ok {
+		for i := 0; i < m.list.Len(); i++ {
+			other, ok := m.list.ItemAt(i).(chat.MessageItem)
+			if !ok || other.ID() == id {
+				continue
+			}
+			if tool, ok := other.(chat.ToolMessageItem); ok && tool.MessageID() == id {
+				toRemove[i] = tool.ID()
+			}
+		}
+		infoID := chat.AssistantInfoID(id)
+		if infoIdx, ok := m.idInxMap[infoID]; ok {
+			toRemove[infoIdx] = infoID
+		}
+	}
 
-	// Remove from index map
-	delete(m.idInxMap, id)
+	// Sort indices descending so removals don't shift earlier indices.
+	indices := make([]int, 0, len(toRemove))
+	for i := range toRemove {
+		indices = append(indices, i)
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(indices)))
 
-	// Rebuild index map for all items after the removed one
-	for i := idx; i < m.list.Len(); i++ {
+	for _, i := range indices {
+		rid := toRemove[i]
+		m.list.RemoveItem(i)
+		delete(m.idInxMap, rid)
+		delete(m.pausedAnimations, rid)
+	}
+
+	// Rebuild index map.
+	m.idInxMap = make(map[string]int, m.list.Len())
+	for i := 0; i < m.list.Len(); i++ {
 		if item, ok := m.list.ItemAt(i).(chat.MessageItem); ok {
 			m.idInxMap[item.ID()] = i
 		}
 	}
-
-	// Clean up any paused animations for this message
-	delete(m.pausedAnimations, id)
 }
 
 // MessageItem returns the message item with the given ID, or nil if not found.

@@ -73,6 +73,7 @@ type KeyMap struct {
 	YoloMode      key.Binding
 	ForkSession   key.Binding
 	NewWindow     key.Binding
+	UndoLastTurn  key.Binding
 	Tab           key.Binding
 }
 
@@ -121,6 +122,10 @@ func DefaultKeyMap() KeyMap {
 		NewWindow: key.NewBinding(
 			key.WithKeys("alt+shift+c", "alt+C"),
 			key.WithHelp("alt+C", "new window"),
+		),
+		UndoLastTurn: key.NewBinding(
+			key.WithKeys("alt+shift+u", "alt+U"),
+			key.WithHelp("alt+U", "undo last turn"),
 		),
 		Tab: key.NewBinding(
 			key.WithKeys("tab"),

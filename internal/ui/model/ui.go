@@ -113,6 +113,8 @@ type openEditorMsg struct {
 	Text string
 }
 
+type scrollToBottomMsg struct{}
+
 type (
 	// cancelTimerExpiredMsg is sent when the cancel timer expires.
 	cancelTimerExpiredMsg struct{}
@@ -610,6 +612,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 			m.chat.SelectLast()
+			m.chat.ScrollToBottom()
+			cmds = append(cmds, func() tea.Msg { return scrollToBottomMsg{} })
 		}
 
 		if hasInProgressTodo(m.session.Todos) {
@@ -734,6 +738,11 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.updateSessionMessage(msg.Payload))
 		case pubsub.DeletedEvent:
 			m.chat.RemoveMessage(msg.Payload.ID)
+			for _, tr := range msg.Payload.ToolResults() {
+				m.chat.RemoveMessage(tr.ToolCallID)
+			}
+			m.chat.ScrollToBottom()
+			cmds = append(cmds, func() tea.Msg { return scrollToBottomMsg{} })
 			m.renderPills()
 		}
 		// start the spinner if there is a new message
@@ -1062,6 +1071,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ttl = DefaultStatusTTL
 		}
 		cmds = append(cmds, clearInfoMsgCmd(ttl))
+	case scrollToBottomMsg:
+		m.chat.ScrollToBottom()
 	case util.ClearStatusMsg:
 		m.status.ClearInfoMsg()
 	case removePlaceholderMsg:
@@ -1229,6 +1240,7 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 				if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
+				cmds = append(cmds, func() tea.Msg { return scrollToBottomMsg{} })
 			}
 		}
 	case message.Tool:
@@ -1919,6 +1931,15 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			return true
 		case key.Matches(msg, m.keyMap.NewWindow):
 			cmds = append(cmds, m.openNewMuxWindow())
+			return true
+		case key.Matches(msg, m.keyMap.UndoLastTurn):
+			if m.isAgentBusy() {
+				cmds = append(cmds, util.ReportWarn("Agent is busy, please wait..."))
+				return true
+			}
+			if m.hasSession() {
+				cmds = append(cmds, m.undoLastTurn())
+			}
 			return true
 		case key.Matches(msg, m.keyMap.Suspend):
 			if m.isAgentBusy() {
@@ -3281,6 +3302,40 @@ func (m *UI) forkSessionToMuxWindow(sessionID string) tea.Cmd {
 			return util.NewErrorMsg(err)
 		}
 		return util.NewInfoMsg("Session forked to new window")
+	}
+}
+
+// undoLastTurn deletes the last user message and all subsequent messages
+// (assistant replies, tool calls/results) from the current session.
+func (m *UI) undoLastTurn() tea.Cmd {
+	sessionID := m.session.ID
+	return func() tea.Msg {
+		ctx := context.TODO()
+		msgs, err := m.com.Workspace.ListMessages(ctx, sessionID)
+		if err != nil {
+			return util.NewErrorMsg(err)
+		}
+		if len(msgs) == 0 {
+			return nil
+		}
+
+		lastUserIdx := -1
+		for i := len(msgs) - 1; i >= 0; i-- {
+			if msgs[i].Role == message.User && !msgs[i].IsSummaryMessage {
+				lastUserIdx = i
+				break
+			}
+		}
+		if lastUserIdx < 0 {
+			return util.NewInfoMsg("No user message to undo")
+		}
+
+		for i := len(msgs) - 1; i >= lastUserIdx; i-- {
+			if err := m.com.Workspace.DeleteMessage(ctx, msgs[i].ID); err != nil {
+				return util.NewErrorMsg(err)
+			}
+		}
+		return util.NewInfoMsg("Last turn undone")
 	}
 }
 
