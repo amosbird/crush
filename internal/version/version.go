@@ -1,12 +1,16 @@
 package version
 
-import "runtime/debug"
+import (
+	"runtime/debug"
+	"time"
+)
 
 // Build-time parameters set via -ldflags.
 
 var (
-	Version = "devel"
-	Commit  = "unknown"
+	Version   = "devel"
+	Commit    = "unknown"
+	BuildTime time.Time
 )
 
 // A user may install crush using `go install github.com/charmbracelet/crush@latest`.
@@ -21,5 +25,12 @@ func init() {
 	mainVersion := info.Main.Version
 	if mainVersion != "" && mainVersion != "(devel)" {
 		Version = mainVersion
+	}
+	for _, s := range info.Settings {
+		if s.Key == "vcs.time" {
+			if t, err := time.Parse(time.RFC3339, s.Value); err == nil {
+				BuildTime = t
+			}
+		}
 	}
 }

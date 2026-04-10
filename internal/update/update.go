@@ -21,9 +21,11 @@ var Default Client = &github{}
 
 // Info contains information about an available update.
 type Info struct {
-	Current string
-	Latest  string
-	URL     string
+	Current        string
+	Latest         string
+	URL            string
+	BuildTime      time.Time
+	LatestPubTime  time.Time
 }
 
 // Matches a version string like:
@@ -36,18 +38,21 @@ func (i Info) IsDevelopment() bool {
 
 // Available returns true if there's an update available.
 //
-// If both current and latest are stable versions, returns true if versions are
-// different.
-// If current is a pre-release and latest isn't, returns true.
-// If latest is a pre-release and current isn't, returns false.
+// For development builds, compares the local build time against the
+// release publish time — only offers an update if the release is newer.
+// For release builds, compares version strings.
 func (i Info) Available() bool {
+	if i.IsDevelopment() {
+		if i.BuildTime.IsZero() {
+			return true
+		}
+		return i.LatestPubTime.After(i.BuildTime)
+	}
 	cpr := strings.Contains(i.Current, "-")
 	lpr := strings.Contains(i.Latest, "-")
-	// current is pre release && latest isn't a prerelease
 	if cpr && !lpr {
 		return true
 	}
-	// latest is pre release && current isn't a prerelease
 	if lpr && !cpr {
 		return false
 	}
@@ -55,10 +60,11 @@ func (i Info) Available() bool {
 }
 
 // Check checks if a new version is available.
-func Check(ctx context.Context, current string, client Client) (Info, error) {
+func Check(ctx context.Context, current string, buildTime time.Time, client Client) (Info, error) {
 	info := Info{
-		Current: current,
-		Latest:  current,
+		Current:   current,
+		Latest:    current,
+		BuildTime: buildTime,
 	}
 
 	release, err := client.Latest(ctx)
@@ -69,13 +75,15 @@ func Check(ctx context.Context, current string, client Client) (Info, error) {
 	info.Latest = strings.TrimPrefix(release.TagName, "v")
 	info.Current = strings.TrimPrefix(info.Current, "v")
 	info.URL = release.HTMLURL
+	info.LatestPubTime = release.PublishedAt
 	return info, nil
 }
 
 // Release represents a GitHub release.
 type Release struct {
-	TagName string `json:"tag_name"`
-	HTMLURL string `json:"html_url"`
+	TagName     string    `json:"tag_name"`
+	HTMLURL     string    `json:"html_url"`
+	PublishedAt time.Time `json:"published_at"`
 }
 
 // Client is a client that can get the latest release.

@@ -4351,6 +4351,13 @@ func (m *UI) selfUpdate() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
+		info, err := update.Check(ctx, version.Version, version.BuildTime, update.Default)
+		if err != nil {
+			return util.ReportError(err)()
+		}
+		if !info.Available() {
+			return util.NewInfoMsg(fmt.Sprintf("Already up to date (%s)", info.Current))
+		}
 		newVersion, err := update.SelfUpdate(ctx)
 		if err != nil {
 			return util.ReportError(err)()
