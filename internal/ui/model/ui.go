@@ -3682,7 +3682,15 @@ func (m *UI) openDiffPreviewDialog(filePath, oldContent, newContent string) {
 
 func (m *UI) openJobPreviewDialog(msg JobPreviewMsg) tea.Cmd {
 	m.dialog.CloseDialog(dialog.JobPreviewID)
-	d, cmd := dialog.NewJobPreview(m.com, msg.ShellID, msg.Description)
+	contentFunc := func() dialog.JobPreviewContentResult {
+		r := msg.ContentFunc()
+		return dialog.JobPreviewContentResult{Content: r.Content, Done: r.Done}
+	}
+	var killFunc dialog.JobPreviewKillFunc
+	if msg.KillFunc != nil {
+		killFunc = msg.KillFunc
+	}
+	d, cmd := dialog.NewJobPreview(m.com, msg.Title, contentFunc, killFunc)
 	m.dialog.OpenDialog(d)
 	return cmd
 }

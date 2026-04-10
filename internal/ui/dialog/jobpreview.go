@@ -1,8 +1,6 @@
 package dialog
 
 import (
-	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -10,7 +8,6 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/crush/internal/shell"
 	"github.com/charmbracelet/crush/internal/ui/common"
 	uv "github.com/charmbracelet/ultraviolet"
 )
@@ -23,16 +20,32 @@ const jobPreviewRefreshInterval = 500 * time.Millisecond
 // jobPreviewTickMsg triggers a content refresh in the job preview dialog.
 type jobPreviewTickMsg struct{}
 
-// JobPreview is a live-updating preview dialog for background shell jobs.
+// JobPreviewContentResult holds the content and state returned by a
+// content provider function.
+type JobPreviewContentResult struct {
+	Content string
+	Done    bool
+}
+
+// JobPreviewContentFunc is called on each refresh to get the current
+// content and done state for the preview.
+type JobPreviewContentFunc func() JobPreviewContentResult
+
+// JobPreviewKillFunc is called when the user presses ctrl+c to kill.
+// It should return the final content to display.
+type JobPreviewKillFunc func() string
+
+// JobPreview is a live-updating preview dialog.
 type JobPreview struct {
 	com *common.Common
 
-	shellID     string
-	description string
+	title       string
 	viewport    viewport.Model
 	follow      bool
 	done        bool
 	killed      bool
+	contentFunc JobPreviewContentFunc
+	killFunc    JobPreviewKillFunc
 
 	km struct {
 		Close key.Binding
@@ -42,8 +55,8 @@ type JobPreview struct {
 
 var _ Dialog = (*JobPreview)(nil)
 
-// NewJobPreview creates a new JobPreview dialog.
-func NewJobPreview(com *common.Common, shellID, description string) (*JobPreview, tea.Cmd) {
+// NewJobPreview creates a new live-updating preview dialog.
+func NewJobPreview(com *common.Common, title string, contentFunc JobPreviewContentFunc, killFunc JobPreviewKillFunc) (*JobPreview, tea.Cmd) {
 	vp := viewport.New()
 	vp.KeyMap = viewport.KeyMap{
 		Up:           key.NewBinding(key.WithKeys("up", "k")),
@@ -58,10 +71,11 @@ func NewJobPreview(com *common.Common, shellID, description string) (*JobPreview
 
 	d := &JobPreview{
 		com:         com,
-		shellID:     shellID,
-		description: description,
+		title:       title,
 		viewport:    vp,
 		follow:      true,
+		contentFunc: contentFunc,
+		killFunc:    killFunc,
 	}
 	d.km.Close = key.NewBinding(
 		key.WithKeys("ctrl+g", "q", "esc"),
@@ -84,20 +98,11 @@ func (d *JobPreview) HandleMsg(msg tea.Msg) Action {
 		if key.Matches(msg, d.km.Close) {
 			return ActionClose{}
 		}
-		if key.Matches(msg, d.km.Kill) && !d.done {
-			mgr := shell.GetBackgroundShellManager()
-			var content string
-			if bs, ok := mgr.Get(d.shellID); ok {
-				stdout, stderr, _, _ := bs.GetOutput()
-				content = stdout
-				if stderr != "" {
-					content += "\n" + stderr
-				}
-			}
-			_ = mgr.Kill(context.Background(), d.shellID)
+		if key.Matches(msg, d.km.Kill) && !d.done && d.killFunc != nil {
+			content := d.killFunc()
 			d.killed = true
 			d.done = true
-			d.viewport.SetContent(content + "\n\n[killed]")
+			d.viewport.SetContent(content)
 			if d.follow {
 				d.viewport.GotoBottom()
 			}
@@ -127,35 +132,9 @@ func (d *JobPreview) refreshContent() {
 	if d.killed {
 		return
 	}
-	mgr := shell.GetBackgroundShellManager()
-	bs, ok := mgr.Get(d.shellID)
-	if !ok {
-		d.done = true
-		d.viewport.SetContent("[job output no longer available]")
-		return
-	}
-	stdout, stderr, done, exitErr := bs.GetOutput()
-	d.done = done
-
-	var content string
-	if stdout != "" {
-		content = stdout
-	}
-	if stderr != "" {
-		if content != "" {
-			content += "\n"
-		}
-		content += stderr
-	}
-	if done {
-		if exitErr != nil {
-			content += fmt.Sprintf("\n\n[exited with error: %v]", exitErr)
-		} else {
-			content += "\n\n[completed]"
-		}
-	}
-
-	d.viewport.SetContent(content)
+	result := d.contentFunc()
+	d.done = result.Done
+	d.viewport.SetContent(result.Content)
 	if d.follow {
 		d.viewport.GotoBottom()
 	}
@@ -184,13 +163,13 @@ func (d *JobPreview) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 			statusIcon = "✕"
 		}
 	}
-	titleText := fmt.Sprintf("%s Job %s · %s", statusIcon, d.shellID, d.description)
+	titleText := statusIcon + " " + d.title
 	title := common.DialogTitle(t, titleText, contentWidth-t.Dialog.Title.GetHorizontalFrameSize(), t.Primary, t.Secondary)
 	titleRendered := t.Dialog.Title.Render(title)
 	titleHeight := lipgloss.Height(titleRendered)
 
 	helpParts := []string{"esc/q: close", "j/k: scroll"}
-	if !d.done {
+	if !d.done && d.killFunc != nil {
 		helpParts = append(helpParts, "ctrl+c: kill")
 	}
 	helpView := t.Dialog.HelpView.Width(contentWidth).Render(strings.Join(helpParts, " · "))

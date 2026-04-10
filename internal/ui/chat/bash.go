@@ -2,6 +2,7 @@ package chat
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/message"
+	"github.com/charmbracelet/crush/internal/shell"
 	"github.com/charmbracelet/crush/internal/ui/styles"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -52,9 +54,45 @@ func (b *BashToolMessageItem) HandleMouseClick(btn ansi.MouseButton, x, y int) b
 		if err := json.Unmarshal([]byte(b.toolCall.Input), &params); err != nil {
 			params.Command = b.toolCall.Input
 		}
+		shellID := meta.ShellID
 		b.pendingJobPreview = &JobPreviewContent{
-			ShellID:     meta.ShellID,
-			Description: cmp.Or(meta.Description, params.Command),
+			Title: fmt.Sprintf("Job %s · %s", shellID, cmp.Or(meta.Description, params.Command)),
+			ContentFunc: func() JobPreviewResult {
+				mgr := shell.GetBackgroundShellManager()
+				bs, ok := mgr.Get(shellID)
+				if !ok {
+					return JobPreviewResult{Content: "[job output no longer available]", Done: true}
+				}
+				stdout, stderr, done, exitErr := bs.GetOutput()
+				content := stdout
+				if stderr != "" {
+					if content != "" {
+						content += "\n"
+					}
+					content += stderr
+				}
+				if done {
+					if exitErr != nil {
+						content += fmt.Sprintf("\n\n[exited with error: %v]", exitErr)
+					} else {
+						content += "\n\n[completed]"
+					}
+				}
+				return JobPreviewResult{Content: content, Done: done}
+			},
+			KillFunc: func() string {
+				mgr := shell.GetBackgroundShellManager()
+				var content string
+				if bs, ok := mgr.Get(shellID); ok {
+					stdout, stderr, _, _ := bs.GetOutput()
+					content = stdout
+					if stderr != "" {
+						content += "\n" + stderr
+					}
+				}
+				_ = mgr.Kill(context.Background(), shellID)
+				return content + "\n\n[killed]"
+			},
 		}
 		return true
 	}

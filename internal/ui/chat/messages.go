@@ -76,10 +76,17 @@ type DiffPreviewable interface {
 	PendingDiffPreview() *DiffPreviewContent
 }
 
-// JobPreviewContent holds metadata for a live background job preview.
+// JobPreviewContent holds the configuration for a live preview dialog.
 type JobPreviewContent struct {
-	ShellID     string
-	Description string
+	Title       string
+	ContentFunc func() JobPreviewResult
+	KillFunc    func() string
+}
+
+// JobPreviewResult holds the content and done state for the preview.
+type JobPreviewResult struct {
+	Content string
+	Done    bool
 }
 
 // JobPreviewable represents an item that can provide a background job
