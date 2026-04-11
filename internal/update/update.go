@@ -19,11 +19,11 @@ var Default Client = &github{}
 
 // Info contains information about an available update.
 type Info struct {
-	Current        string
-	Latest         string
-	URL            string
-	BuildTime      time.Time
-	LatestPubTime  time.Time
+	Current       string
+	Latest        string
+	URL           string
+	BuildTime     time.Time
+	LatestPubTime time.Time
 }
 
 // Matches a version string like:
