@@ -259,7 +259,7 @@ func (s *ConfigStore) SetProviderAPIKey(scope Scope, providerID string, apiKey a
 			} else if len(models) > 0 {
 				fields["providers.copilot.models"] = models
 				fetchedModels = models
-				slog.Info("Synced Copilot models on login", "count", len(models))
+				slog.Debug("Synced Copilot models on login", "count", len(models))
 			}
 		}
 		if err := s.SetConfigFields(scope, fields); err != nil {
@@ -365,7 +365,7 @@ func (s *ConfigStore) RefreshOAuthToken(ctx context.Context, scope Scope, provid
 	// After acquiring the lock, check if another instance already refreshed.
 	if diskToken := s.readDiskOAuthToken(scope, providerID); diskToken != nil {
 		if diskToken.ExpiresAt > providerConfig.OAuthToken.ExpiresAt && !diskToken.IsExpired() {
-			slog.Info("Using token refreshed by another instance", "provider", providerID)
+			slog.Debug("Using token refreshed by another instance", "provider", providerID)
 			providerConfig.OAuthToken = diskToken
 			providerConfig.APIKey = diskToken.AccessToken
 			if providerID == string(catwalk.InferenceProviderCopilot) {
@@ -390,7 +390,7 @@ func (s *ConfigStore) RefreshOAuthToken(ctx context.Context, scope Scope, provid
 		return fmt.Errorf("failed to refresh OAuth token for provider %s: %w", providerID, refreshErr)
 	}
 
-	slog.Info("Successfully refreshed OAuth token", "provider", providerID)
+	slog.Debug("Successfully refreshed OAuth token", "provider", providerID)
 	providerConfig.OAuthToken = newToken
 	providerConfig.APIKey = newToken.AccessToken
 
@@ -412,7 +412,7 @@ func (s *ConfigStore) RefreshOAuthToken(ctx context.Context, scope Scope, provid
 		} else if len(models) > 0 {
 			fields["providers.copilot.models"] = models
 			providerConfig.Models = models
-			slog.Info("Synced Copilot models", "count", len(models))
+			slog.Debug("Synced Copilot models", "count", len(models))
 		}
 	}
 
@@ -486,7 +486,7 @@ func (s *ConfigStore) ImportCopilot() (*oauth.Token, bool) {
 		return nil, false
 	}
 
-	slog.Info("Found existing GitHub Copilot token on disk. Authenticating...")
+	slog.Debug("Found existing GitHub Copilot token on disk, authenticating")
 	token, err := copilot.RefreshToken(context.TODO(), diskToken)
 	if err != nil {
 		slog.Error("Unable to import GitHub Copilot token", "error", err)

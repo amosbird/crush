@@ -306,7 +306,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 					"depth", call.autoSummarizeDepth,
 				)
 			} else {
-				slog.Info("Pre-flight auto-summarize triggered",
+				slog.Debug("Pre-flight auto-summarize triggered",
 					"session_id", call.SessionID,
 					"used_tokens", tokens,
 					"threshold", summarizeThreshold,

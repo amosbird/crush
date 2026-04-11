@@ -46,7 +46,7 @@ func (s *hyperSync) Get(ctx context.Context) (catwalk.Provider, error) {
 	var throwErr error
 	s.once.Do(func() {
 		if !s.autoupdate {
-			slog.Info("Using embedded Hyper provider")
+			slog.Debug("Using embedded Hyper provider")
 			s.result = hyper.Embedded()
 			return
 		}
@@ -57,7 +57,7 @@ func (s *hyperSync) Get(ctx context.Context) (catwalk.Provider, error) {
 			cached = hyper.Embedded()
 		}
 
-		slog.Info("Fetching Hyper provider")
+		slog.Debug("Fetching Hyper provider")
 		result, err := s.client.Get(ctx, etag)
 		if errors.Is(err, context.DeadlineExceeded) {
 			slog.Warn("Hyper provider not updated in time")
@@ -65,7 +65,7 @@ func (s *hyperSync) Get(ctx context.Context) (catwalk.Provider, error) {
 			return
 		}
 		if errors.Is(err, catwalk.ErrNotModified) {
-			slog.Info("Hyper provider not modified")
+			slog.Debug("Hyper provider not modified")
 			s.result = cached
 			return
 		}

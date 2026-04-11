@@ -73,7 +73,7 @@ func Alias(userID string) {
 		slog.Error("Failed to enqueue PostHog alias event", "error", err)
 		return
 	}
-	slog.Info("Aliased in PostHog", "machine_id", distinctId, "user_id", userID)
+	slog.Debug("Aliased in PostHog", "machine_id", distinctId, "user_id", userID)
 }
 
 // send logs an event to PostHog with the given event name and properties.

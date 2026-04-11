@@ -41,7 +41,7 @@ func (s *catwalkSync) Get(ctx context.Context) ([]catwalk.Provider, error) {
 	var throwErr error
 	s.once.Do(func() {
 		if !s.autoupdate {
-			slog.Info("Using embedded Catwalk providers")
+			slog.Debug("Using embedded Catwalk providers")
 			s.result = embedded.GetAll()
 			return
 		}
@@ -52,7 +52,7 @@ func (s *catwalkSync) Get(ctx context.Context) ([]catwalk.Provider, error) {
 			cached = embedded.GetAll()
 		}
 
-		slog.Info("Fetching providers from Catwalk")
+		slog.Debug("Fetching providers from Catwalk")
 		result, err := s.client.GetProviders(ctx, etag)
 		if errors.Is(err, context.DeadlineExceeded) {
 			slog.Warn("Catwalk providers not updated in time")
@@ -60,7 +60,7 @@ func (s *catwalkSync) Get(ctx context.Context) ([]catwalk.Provider, error) {
 			return
 		}
 		if errors.Is(err, catwalk.ErrNotModified) {
-			slog.Info("Catwalk providers not modified")
+			slog.Debug("Catwalk providers not modified")
 			s.result = cached
 			return
 		}

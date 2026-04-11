@@ -85,7 +85,7 @@ func UpdateProviders(pathOrURL string) error {
 		return fmt.Errorf("failed to save providers to cache: %w", err)
 	}
 
-	slog.Info("Providers updated successfully", "count", len(providers), "from", pathOrURL, "to", cachePathFor)
+	slog.Debug("Providers updated successfully", "count", len(providers), "from", pathOrURL, "to", cachePathFor)
 	return nil
 }
 
@@ -121,7 +121,7 @@ func UpdateHyper(pathOrURL string) error {
 		return fmt.Errorf("failed to save Hyper provider to cache: %w", err)
 	}
 
-	slog.Info("Hyper provider updated successfully", "from", pathOrURL, "to", cachePathFor("hyper"))
+	slog.Debug("Hyper provider updated successfully", "from", pathOrURL, "to", cachePathFor("hyper"))
 	return nil
 }
 
@@ -214,7 +214,7 @@ func (c cache[T]) Get() (T, string, error) {
 }
 
 func (c cache[T]) Store(v T) error {
-	slog.Info("Saving provider data to disk", "path", c.path)
+	slog.Debug("Saving provider data to disk", "path", c.path)
 	if err := os.MkdirAll(filepath.Dir(c.path), 0o755); err != nil {
 		return fmt.Errorf("failed to create directory for provider cache: %w", err)
 	}

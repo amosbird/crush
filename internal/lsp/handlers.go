@@ -94,7 +94,7 @@ func HandleServerMessage(_ context.Context, method string, params json.RawMessag
 	case protocol.Warning:
 		slog.Warn("LSP Server", "message", msg.Message)
 	case protocol.Info:
-		slog.Info("LSP Server", "message", msg.Message)
+		slog.Debug("LSP Server", "message", msg.Message)
 	case protocol.Log:
 		slog.Debug("LSP Server", "message", msg.Message)
 	}

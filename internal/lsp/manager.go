@@ -152,7 +152,7 @@ var skipAutoStartCommands = map[string]bool{
 func (s *Manager) startServer(ctx context.Context, name, filepath string, server *powernapconfig.ServerConfig) {
 	isUserConfigured := s.isUserConfigured(name)
 	if !isUserConfigured && s.autoLSP != nil && !*s.autoLSP {
-		slog.Info("Auto-start LSP disabled, skipping", "name", name)
+		slog.Debug("Auto-start LSP disabled, skipping", "name", name)
 		return
 	}
 

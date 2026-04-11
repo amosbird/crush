@@ -164,7 +164,7 @@ func Close(ctx context.Context) error {
 
 // Initialize initializes MCP clients based on the provided configuration.
 func Initialize(ctx context.Context, permissions permission.Service, cfg *config.ConfigStore) {
-	slog.Info("Initializing MCP clients")
+	slog.Debug("Initializing MCP clients")
 	var wg sync.WaitGroup
 	// Initialize states for all configured MCPs
 	for name, m := range cfg.Config().MCP {
@@ -291,7 +291,7 @@ func DisableSingle(cfg *config.ConfigStore, name string) error {
 	// Update state to disabled.
 	updateState(name, StateDisabled, nil, nil, Counts{})
 
-	slog.Info("Disabled mcp client", "name", name)
+	slog.Debug("Disabled MCP client", "name", name)
 	return nil
 }
 
