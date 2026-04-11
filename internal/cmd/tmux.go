@@ -1,10 +1,14 @@
 package cmd
 
 import (
+	"crypto/sha1"
 	_ "embed"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -13,9 +17,10 @@ import (
 var embeddedTmuxConf string
 
 // tmuxSocketPath returns the path to the dedicated crush tmux socket.
-func tmuxSocketPath() string {
-	dir := os.TempDir()
-	return filepath.Join(dir, "tmux-crush")
+func tmuxSocketPath(cwd string) string {
+	sum := sha1.Sum([]byte(filepath.Clean(cwd)))
+	name := fmt.Sprintf("tmux-crush-%x", sum[:6])
+	return filepath.Join(os.TempDir(), name)
 }
 
 // tmuxConfPath returns the path where the embedded tmux config is written.
@@ -59,13 +64,26 @@ func shouldAutoTmux() bool {
 	return findMux() != ""
 }
 
+func tmuxWindowName(cwd string) string {
+	cleaned := filepath.Clean(cwd)
+	name := filepath.Base(cleaned)
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		trimmed := strings.TrimRight(cleaned, string(filepath.Separator))
+		if vol := filepath.VolumeName(trimmed); vol != "" && strings.EqualFold(trimmed, vol+string(filepath.Separator)) {
+			return vol
+		}
+		return "crush"
+	}
+	return name
+}
+
 // execIntoTmux replaces the current process with a tmux session running crush.
 // On Unix this uses syscall.Exec; on Windows it uses os/exec and waits.
 //
 // This mirrors the behavior of startcrush-tmux:
 //
-//	TMUX=/tmp/tmux-crush tmux -f <config> -u new-session -A -s crush -c <cwd> <crush> --continue
-func execIntoTmux(crushArgs []string) error {
+//	TMUX=/tmp/tmux-crush-<hash> tmux -f <config> -u new-session -A -s crush -n <window-name> -c <cwd> <crush> [args...]
+func execIntoTmux(cwd string, crushArgs []string) error {
 	muxBin := findMux()
 	if muxBin == "" {
 		return nil
@@ -76,28 +94,25 @@ func execIntoTmux(crushArgs []string) error {
 		return err
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
 
-	// Set dedicated socket path so crush's tmux doesn't interfere with
-	// the user's regular tmux sessions.
-	socket := tmuxSocketPath()
+	// Set a dedicated socket path per working directory so crush sessions
+	// from different projects do not reuse the same tmux server.
+	socket := tmuxSocketPath(cwd)
+	windowName := tmuxWindowName(cwd)
 
 	// Build tmux args:
-	// tmux -S <socket> -f <config> -u new-session -A -s crush -c <cwd> <exe> [args...]
+	// tmux -S <socket> -f <config> -u new-session -A -s crush -n <window-name> -c <cwd> <exe> [args...]
 	args := []string{
 		"-S", socket,
 		"-f", confPath,
 		"-u",
 		"new-session", "-A",
 		"-s", "crush",
+		"-n", windowName,
 		"-c", cwd,
 	}
 
@@ -110,8 +125,7 @@ func execIntoTmux(crushArgs []string) error {
 }
 
 // buildInnerTmuxArgs builds the argument list for the crush process that
-// will run inside tmux. It preserves the user's original flags and defaults
-// to --continue if no session flag was given.
+// will run inside tmux. It preserves the user's original flags.
 func buildInnerTmuxArgs(cmd *cobra.Command) []string {
 	var args []string
 
@@ -136,12 +150,12 @@ func buildInnerTmuxArgs(cmd *cobra.Command) []string {
 	}
 
 	sessionID, _ := cmd.Flags().GetString("session")
-	if sessionID != "" {
-		args = append(args, "--session", sessionID)
-	}
-
 	continueLast, _ := cmd.Flags().GetBool("continue")
-	if continueLast {
+
+	switch {
+	case sessionID != "":
+		args = append(args, "--session", sessionID)
+	case continueLast:
 		args = append(args, "--continue")
 	}
 

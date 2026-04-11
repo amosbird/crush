@@ -103,11 +103,15 @@ crush --continue
 	RunE: func(cmd *cobra.Command, args []string) error {
 		noTmux, _ := cmd.Flags().GetBool("no-tmux")
 		if !noTmux && shouldAutoTmux() {
+			cwd, err := requestedCwd(cmd, os.Getwd)
+			if err != nil {
+				return err
+			}
 			// Re-exec into a dedicated tmux/psmux session.
 			// Build the inner crush command args, passing through the
-			// user's original flags and defaulting to --continue.
+			// user's original flags.
 			innerArgs := buildInnerTmuxArgs(cmd)
-			if err := execIntoTmux(innerArgs); err != nil {
+			if err := execIntoTmux(cwd, innerArgs); err != nil {
 				slog.Warn("Failed to auto-start tmux, continuing without it", "error", err)
 			}
 		}
@@ -268,6 +272,22 @@ func setupWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error) {
 		return setupClientServerWorkspace(cmd)
 	}
 	return setupLocalWorkspace(cmd)
+}
+
+func requestedCwd(cmd *cobra.Command, getwd func() (string, error)) (string, error) {
+	cwd, _ := cmd.Flags().GetString("cwd")
+	if cwd == "" {
+		var err error
+		cwd, err = getwd()
+		if err != nil {
+			return "", err
+		}
+	}
+	abs, err := filepath.Abs(cwd)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(abs), nil
 }
 
 // setupLocalWorkspace creates an in-process app.App and wraps it in an
