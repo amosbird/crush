@@ -195,6 +195,8 @@ func (m *BackgroundShellManager) Kill(ctx context.Context, id string) error {
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-time.After(3 * time.Second):
+		return nil
 	}
 	// Note: if ctx is cancelled, shell.cancel() was already called so the
 	// process will be terminated. The goroutine in Start() will close
