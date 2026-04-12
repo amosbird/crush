@@ -3580,8 +3580,9 @@ func (m *UI) cancelAgent() tea.Cmd {
 	}
 
 	if m.isCanceling {
-		// Second ctrl+g press - actually cancel the agent.
+		// Second ctrl+g press - actually cancel the agent and clear queue.
 		m.isCanceling = false
+		m.com.Workspace.AgentClearQueue(m.session.ID)
 		m.com.Workspace.AgentCancel(m.session.ID)
 		// Stop the spinning todo indicator.
 		m.todoIsSpinning = false

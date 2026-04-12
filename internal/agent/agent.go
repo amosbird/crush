@@ -812,9 +812,12 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	cancel()
 
 	// Drain the queue: if there are queued messages, process the next one.
-	// This ensures queued user messages are not stranded after a run completes.
-	if result, err := a.drainQueue(ctx, call.SessionID); result != nil || err != nil {
-		return result, err
+	// Skip if the run was cancelled — the user wanted to stop, not continue
+	// with queued messages.
+	if errors.Is(err, context.Canceled) {
+		a.messageQueue.Del(call.SessionID)
+	} else if drainResult, drainErr := a.drainQueue(ctx, call.SessionID); drainResult != nil || drainErr != nil {
+		return drainResult, drainErr
 	}
 
 	return result, err
