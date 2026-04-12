@@ -221,7 +221,7 @@ require (
 
 // Constraint-based layout engine, wide-character rendering fixes, and
 // synchronized updates (DEC mode 2026).
-replace github.com/charmbracelet/ultraviolet => github.com/amosbird/ultraviolet v0.0.0-20260408152937-388c7d6b3a92
+replace github.com/charmbracelet/ultraviolet => github.com/amosbird/ultraviolet v0.0.0-20260409082807-6080ea272617
 
 // Word-boundary aware Ctrl+W/Ctrl+D and CJK cursor positioning fix.
 replace charm.land/bubbles/v2 => github.com/amosbird/bubbles/v2 v2.1.1-0.20260329024325-01e52635f8e0
