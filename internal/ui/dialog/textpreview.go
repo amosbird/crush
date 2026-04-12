@@ -1,6 +1,7 @@
 package dialog
 
 import (
+	"image"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -8,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/ui/common"
+	"github.com/charmbracelet/crush/internal/ui/list"
 	uv "github.com/charmbracelet/ultraviolet"
 )
 
@@ -23,11 +25,21 @@ type TextPreview struct {
 	viewport viewport.Model
 
 	viewportDirty bool
+	contentArea   image.Rectangle
+
+	// Mouse selection state.
+	mouseDown bool
+	startLine int
+	startCol  int
+	endLine   int
+	endCol    int
+	hasSelect bool
 
 	km struct {
 		Close      key.Binding
 		ScrollUp   key.Binding
 		ScrollDown key.Binding
+		Copy       key.Binding
 	}
 }
 
@@ -53,6 +65,7 @@ func NewTextPreview(com *common.Common, title, content string) *TextPreview {
 		content:       content,
 		viewport:      vp,
 		viewportDirty: true,
+		startLine:     -1,
 	}
 	d.km.Close = key.NewBinding(
 		key.WithKeys("ctrl+g", "q", "esc"),
@@ -60,6 +73,7 @@ func NewTextPreview(com *common.Common, title, content string) *TextPreview {
 	)
 	d.km.ScrollUp = key.NewBinding(key.WithKeys("up", "k"))
 	d.km.ScrollDown = key.NewBinding(key.WithKeys("down", "j"))
+	d.km.Copy = key.NewBinding(key.WithKeys("c", "y"))
 	return d
 }
 
@@ -73,13 +87,67 @@ func (d *TextPreview) HandleMsg(msg tea.Msg) Action {
 		if key.Matches(msg, d.km.Close) {
 			return ActionClose{}
 		}
+		if key.Matches(msg, d.km.Copy) {
+			return ActionCmd{common.CopyToClipboard(d.content, "Copied to clipboard")}
+		}
 		d.viewport, _ = d.viewport.Update(msg)
 	case tea.MouseWheelMsg:
 		d.viewport, _ = d.viewport.Update(msg)
 	case tea.MouseClickMsg:
-		return ActionClose{}
+		pt := image.Pt(msg.X, msg.Y)
+		if !pt.In(d.contentArea) {
+			return ActionClose{}
+		}
+		col := msg.X - d.contentArea.Min.X
+		line := msg.Y - d.contentArea.Min.Y + d.viewport.YOffset()
+		d.mouseDown = true
+		d.startLine = line
+		d.startCol = col
+		d.endLine = line
+		d.endCol = col
+		d.hasSelect = false
+	case tea.MouseMotionMsg:
+		if !d.mouseDown {
+			return nil
+		}
+		col := msg.X - d.contentArea.Min.X
+		line := msg.Y - d.contentArea.Min.Y + d.viewport.YOffset()
+		d.endLine = line
+		d.endCol = col
+		d.hasSelect = d.startLine != d.endLine || d.startCol != d.endCol
+	case tea.MouseReleaseMsg:
+		if !d.mouseDown {
+			return nil
+		}
+		d.mouseDown = false
+		if d.hasSelect {
+			if text := d.selectedText(); text != "" {
+				d.hasSelect = false
+				return ActionCmd{common.CopyToClipboard(text, "Selected text copied to clipboard")}
+			}
+		}
 	}
 	return nil
+}
+
+func (d *TextPreview) normalizedSelection() (sLine, sCol, eLine, eCol int) {
+	sLine, sCol = d.startLine, d.startCol
+	eLine, eCol = d.endLine, d.endCol
+	if sLine > eLine || (sLine == eLine && sCol > eCol) {
+		sLine, sCol, eLine, eCol = eLine, eCol, sLine, sCol
+	}
+	return
+}
+
+func (d *TextPreview) selectedText() string {
+	sLine, sCol, eLine, eCol := d.normalizedSelection()
+	rendered := d.viewport.View()
+	w := d.contentArea.Dx()
+	h := d.contentArea.Dy()
+	area := image.Rect(0, 0, w, h)
+	visStartLine := sLine - d.viewport.YOffset()
+	visEndLine := eLine - d.viewport.YOffset()
+	return strings.TrimRight(list.HighlightContent(rendered, area, visStartLine, sCol, visEndLine, eCol), "\n")
 }
 
 // Draw implements [Dialog].
@@ -95,7 +163,7 @@ func (d *TextPreview) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	titleRendered := t.Dialog.Title.Render(title)
 	titleHeight := lipgloss.Height(titleRendered)
 
-	helpView := t.Dialog.HelpView.Width(contentWidth).Render("esc/q: close · j/k: scroll · pgup/pgdn: page")
+	helpView := t.Dialog.HelpView.Width(contentWidth).Render("esc/q: close · j/k: scroll · c: copy · drag: select")
 	helpHeight := lipgloss.Height(helpView)
 
 	frameHeight := dialogStyle.GetVerticalFrameSize() + 2
@@ -112,6 +180,17 @@ func (d *TextPreview) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 
 	content := d.viewport.View()
+
+	if d.hasSelect {
+		sLine, sCol, eLine, eCol := d.normalizedSelection()
+		visStartLine := sLine - d.viewport.YOffset()
+		visEndLine := eLine - d.viewport.YOffset()
+		w := contentWidth - 1
+		h := availableHeight
+		hlArea := image.Rect(0, 0, w, h)
+		content = list.Highlight(content, hlArea, visStartLine, sCol, visEndLine, eCol, list.ToHighlighter(t.TextSelection))
+	}
+
 	needsScrollbar := d.viewport.TotalLineCount() > availableHeight
 	if needsScrollbar {
 		scrollbar := common.Scrollbar(t, availableHeight, d.viewport.TotalLineCount(), availableHeight, d.viewport.YOffset())
@@ -120,7 +199,21 @@ func (d *TextPreview) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 
 	parts := []string{titleRendered, "", content, "", helpView}
 	innerContent := lipgloss.JoinVertical(lipgloss.Left, parts...)
-	DrawCenter(scr, area, dialogStyle.Render(innerContent))
+	rendered := dialogStyle.Render(innerContent)
+
+	width, height := lipgloss.Size(rendered)
+	center := common.CenterRect(area, width, height)
+
+	pad := dialogStyle.GetHorizontalPadding()
+	contentTopY := center.Min.Y + titleHeight + 2
+	d.contentArea = image.Rect(
+		center.Min.X+pad,
+		contentTopY,
+		center.Min.X+pad+contentWidth-1,
+		contentTopY+availableHeight,
+	)
+
+	uv.NewStyledString(rendered).Draw(scr, center)
 	return nil
 }
 

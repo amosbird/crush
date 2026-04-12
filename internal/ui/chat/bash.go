@@ -46,7 +46,11 @@ func (b *BashToolMessageItem) HandleMouseClick(btn ansi.MouseButton, x, y int) b
 		return false
 	}
 	if b.result == nil {
-		return false
+		b.pendingPreview = &TextPreviewContent{
+			Title: prettifyToolName(b.toolCall.Name),
+			Text:  b.formatToolForCopy(),
+		}
+		return true
 	}
 	var meta tools.BashResponseMetadata
 	if err := json.Unmarshal([]byte(b.result.Metadata), &meta); err == nil && meta.ShellID != "" {
