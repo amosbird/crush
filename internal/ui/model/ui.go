@@ -1320,10 +1320,13 @@ func (m *UI) updateSessionMessage(msg message.Message) tea.Cmd {
 		existingToolItem := m.chat.MessageItem(tc.ID)
 		if toolItem, ok := existingToolItem.(chat.ToolMessageItem); ok {
 			existingToolCall := toolItem.ToolCall()
-			// only update if finished state changed or input changed
-			// to avoid clearing the cache
 			if (tc.Finished && !existingToolCall.Finished) || tc.Input != existingToolCall.Input {
 				toolItem.SetToolCall(tc)
+				m.chat.InvalidateItemHeight(tc.ID)
+			}
+			if pendingResult, ok := m.pendingToolResults[tc.ID]; ok {
+				delete(m.pendingToolResults, tc.ID)
+				toolItem.SetResult(pendingResult)
 				m.chat.InvalidateItemHeight(tc.ID)
 			}
 		}
