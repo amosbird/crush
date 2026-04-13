@@ -122,7 +122,6 @@ func extractFilePath(input string) string {
 		return ""
 	}
 	rest := input[idx+len(key):]
-	// Skip optional whitespace and colon.
 	rest = strings.TrimLeft(rest, " \t\n\r:")
 	rest = strings.TrimLeft(rest, " \t\n\r")
 	if len(rest) == 0 || rest[0] != '"' {
@@ -134,6 +133,27 @@ func extractFilePath(input string) string {
 		return ""
 	}
 	return fsext.PrettyPath(rest[:end])
+}
+
+// extractPartialContent extracts the content value from incomplete streaming
+// JSON. The content field is typically the last and largest field, so it may
+// be truncated. We unescape basic JSON sequences to display readable text.
+func extractPartialContent(input string) string {
+	const key = `"content"`
+	idx := strings.Index(input, key)
+	if idx < 0 {
+		return ""
+	}
+	rest := input[idx+len(key):]
+	rest = strings.TrimLeft(rest, " \t\n\r:")
+	rest = strings.TrimLeft(rest, " \t\n\r")
+	if len(rest) == 0 || rest[0] != '"' {
+		return ""
+	}
+	rest = rest[1:]
+	// Unescape basic JSON sequences for display.
+	r := strings.NewReplacer(`\"`, `"`, `\\`, `\`, `\n`, "\n", `\t`, "\t")
+	return r.Replace(rest)
 }
 
 // WriteToolMessageItem is a message item that represents a write tool call.
@@ -168,10 +188,27 @@ func (w *WriteToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 	}
 
 	if opts.IsPending() {
+		name := "Write"
 		if file != "" {
-			return pendingTool(sty, "Write "+file, opts.Anim, opts.Compact, opts.CreatedAt)
+			name = "Write " + file
 		}
-		return pendingTool(sty, "Write", opts.Anim, opts.Compact, opts.CreatedAt)
+		header := pendingTool(sty, name, opts.Anim, opts.Compact, opts.CreatedAt)
+		if opts.Compact {
+			return header
+		}
+		content := params.Content
+		if content == "" {
+			content = extractPartialContent(opts.ToolCall.Input)
+		}
+		if content != "" {
+			filePath := params.FilePath
+			if filePath == "" {
+				filePath = file
+			}
+			body := toolOutputCodeContent(sty, filePath, content, 0, cappedWidth, opts.ExpandedContent)
+			return joinToolParts(header, body)
+		}
+		return header
 	}
 
 	header := toolHeader(sty, opts.Status, "Write", cappedWidth, opts.Compact, file)
