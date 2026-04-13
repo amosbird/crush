@@ -32,6 +32,7 @@ Common shell builtins and core utils available on Windows.
 - Use job_output tool to view current output from background shell
 - Use job_kill tool to terminate a background shell
 - IMPORTANT: NEVER use `&` at the end of commands to run in background - use run_in_background parameter instead
+- When a command is automatically moved to background (exceeded timeout), do NOT stop and ask the user. Continue with other tasks. The user can monitor the job via the UI. If the job result is needed for subsequent steps, use job_output with wait=true to block until completion.
 - Commands that should run in background:
   * Long-running servers (e.g., `npm start`, `python -m http.server`, `node server.js`)
   * Watch/monitoring tasks (e.g., `npm run watch`, `tail -f logfile`)
