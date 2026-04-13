@@ -555,10 +555,26 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 				Finished:         true,
 			}
 			currentAssistant.AddToolCall(toolCall)
-			// Use parent ctx instead of genCtx to ensure the update succeeds
-			// even if the request is canceled mid-stream
 			return a.messages.Update(ctx, *currentAssistant)
 		},
+		OnToolInputDelta: func() func(id, delta string) error {
+			var pending int
+			return func(id, delta string) error {
+				for _, tc := range currentAssistant.ToolCalls() {
+					if tc.ID == id {
+						tc.Input += delta
+						currentAssistant.AddToolCall(tc)
+						pending += len(delta)
+						if pending >= 200 {
+							pending = 0
+							return a.messages.Update(ctx, *currentAssistant)
+						}
+						return nil
+					}
+				}
+				return nil
+			}
+		}(),
 		OnToolResult: func(result fantasy.ToolResultContent) error {
 			toolResult := a.convertToToolResult(result)
 			// Use parent ctx instead of genCtx to ensure the message is created
