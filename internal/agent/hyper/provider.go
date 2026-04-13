@@ -162,6 +162,14 @@ func (m *languageModel) Generate(ctx context.Context, call fantasy.Call) (*fanta
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		return nil, ErrUnauthorized
+	case http.StatusPaymentRequired:
+		return nil, ErrNoCredits
+	case http.StatusTooManyRequests:
+		return nil, toProviderError(resp, retryAfter(resp))
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := ioReadAllLimit(resp.Body, 64*1024)
 		return nil, fmt.Errorf("proxy generate error: %s", strings.TrimSpace(string(b)))
