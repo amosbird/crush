@@ -701,7 +701,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			if found {
 				continue
 			}
-			content := "There was an error while executing the tool"
+			content := fmt.Sprintf("Tool execution interrupted: %v", err)
 			if isCancelErr {
 				content = "Error: user cancelled assistant tool calling"
 			} else if isPermissionErr {
