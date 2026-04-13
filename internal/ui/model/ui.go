@@ -1316,7 +1316,9 @@ func (m *UI) updateSessionMessage(msg message.Message) tea.Cmd {
 	}
 
 	var items []chat.MessageItem
+	currentToolIDs := make(map[string]bool, len(msg.ToolCalls()))
 	for _, tc := range msg.ToolCalls() {
+		currentToolIDs[tc.ID] = true
 		existingToolItem := m.chat.MessageItem(tc.ID)
 		if toolItem, ok := existingToolItem.(chat.ToolMessageItem); ok {
 			existingToolCall := toolItem.ToolCall()
@@ -1336,6 +1338,10 @@ func (m *UI) updateSessionMessage(msg message.Message) tea.Cmd {
 			items = append(items, chat.NewToolMessageItem(m.com.Styles, msg.ID, tc, pendingResult, false))
 		}
 	}
+
+	// Remove orphaned tool items that no longer exist in the message
+	// (e.g. after a retry clears Parts).
+	m.chat.RemoveOrphanedTools(msg.ID, currentToolIDs)
 
 	for _, item := range items {
 		if animatable, ok := item.(chat.Animatable); ok {

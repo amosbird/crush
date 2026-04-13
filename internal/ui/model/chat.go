@@ -646,6 +646,29 @@ func (m *Chat) RemoveMessage(id string) {
 	}
 }
 
+// RemoveOrphanedTools removes tool items that belong to the given message ID
+// but are not in the currentToolIDs set. This happens when a retry clears
+// the assistant message's Parts and new tool calls get different IDs.
+func (m *Chat) RemoveOrphanedTools(messageID string, currentToolIDs map[string]bool) {
+	var orphans []string
+	for i := 0; i < m.list.Len(); i++ {
+		item, ok := m.list.ItemAt(i).(chat.MessageItem)
+		if !ok {
+			continue
+		}
+		tool, ok := item.(chat.ToolMessageItem)
+		if !ok {
+			continue
+		}
+		if tool.MessageID() == messageID && !currentToolIDs[tool.ID()] {
+			orphans = append(orphans, tool.ID())
+		}
+	}
+	for _, id := range orphans {
+		m.RemoveMessage(id)
+	}
+}
+
 // MessageItem returns the message item with the given ID, or nil if not found.
 func (m *Chat) MessageItem(id string) chat.MessageItem {
 	idx, ok := m.idInxMap[id]
