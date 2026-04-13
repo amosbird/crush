@@ -560,6 +560,9 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 		OnToolInputDelta: func() func(id, delta string) error {
 			var pending int
 			return func(id, delta string) error {
+				if len(delta) == 0 {
+					return nil
+				}
 				for _, tc := range currentAssistant.ToolCalls() {
 					if tc.ID == id {
 						tc.Input += delta
