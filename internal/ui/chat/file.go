@@ -136,16 +136,18 @@ type WriteToolRenderContext struct{}
 // RenderTool implements the [ToolRenderer] interface.
 func (w *WriteToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
+
+	var params tools.WriteParams
+	_ = json.Unmarshal([]byte(opts.ToolCall.Input), &params)
+	file := fsext.PrettyPath(params.FilePath)
+
 	if opts.IsPending() {
+		if file != "" {
+			return pendingTool(sty, "Write "+file, opts.Anim, opts.Compact, opts.CreatedAt)
+		}
 		return pendingTool(sty, "Write", opts.Anim, opts.Compact, opts.CreatedAt)
 	}
 
-	var params tools.WriteParams
-	if err := json.Unmarshal([]byte(opts.ToolCall.Input), &params); err != nil {
-		return toolErrorContent(sty, &message.ToolResult{Content: "Invalid parameters"}, cappedWidth)
-	}
-
-	file := fsext.PrettyPath(params.FilePath)
 	header := toolHeader(sty, opts.Status, "Write", cappedWidth, opts.Compact, file)
 	if opts.Compact {
 		return header
