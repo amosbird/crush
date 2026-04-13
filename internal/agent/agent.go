@@ -70,9 +70,10 @@ const (
 	maxToolResultSize = 80_000
 
 	// streamIdleTimeout cancels and retries an LLM streaming request when
-	// no SSE data arrives within this duration. This prevents indefinite
-	// hangs caused by provider connection issues.
-	streamIdleTimeout = 2 * time.Minute
+	// no SSE data arrives within this duration. This must be long enough
+	// to accommodate providers like Copilot that buffer entire tool call
+	// arguments before sending any SSE events.
+	streamIdleTimeout = 10 * time.Minute
 )
 
 var userAgent = fmt.Sprintf("Charm-Crush/%s (https://charm.land/crush)", version.Version)
