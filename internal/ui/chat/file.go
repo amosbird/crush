@@ -113,6 +113,29 @@ func (v *ViewToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 // Write Tool
 // -----------------------------------------------------------------------------
 
+// extractFilePath tries to extract file_path from incomplete JSON input
+// during streaming, when json.Unmarshal would fail.
+func extractFilePath(input string) string {
+	const key = `"file_path"`
+	idx := strings.Index(input, key)
+	if idx < 0 {
+		return ""
+	}
+	rest := input[idx+len(key):]
+	// Skip optional whitespace and colon.
+	rest = strings.TrimLeft(rest, " \t\n\r:")
+	rest = strings.TrimLeft(rest, " \t\n\r")
+	if len(rest) == 0 || rest[0] != '"' {
+		return ""
+	}
+	rest = rest[1:]
+	end := strings.IndexByte(rest, '"')
+	if end < 0 {
+		return ""
+	}
+	return fsext.PrettyPath(rest[:end])
+}
+
 // WriteToolMessageItem is a message item that represents a write tool call.
 type WriteToolMessageItem struct {
 	*baseToolMessageItem
@@ -140,6 +163,9 @@ func (w *WriteToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 	var params tools.WriteParams
 	_ = json.Unmarshal([]byte(opts.ToolCall.Input), &params)
 	file := fsext.PrettyPath(params.FilePath)
+	if file == "" {
+		file = extractFilePath(opts.ToolCall.Input)
+	}
 
 	if opts.IsPending() {
 		if file != "" {
