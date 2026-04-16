@@ -826,6 +826,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cfg.Disabled = msg.Disabled
 			m.com.Config().MCP[msg.Name] = cfg
 		}
+		m.mcpStates = m.com.Workspace.MCPGetStates()
 		cmds = append(cmds, util.ReportInfo(msg.Info))
 	case insertFileCompletionMsg:
 		m.sessionFileReads = append(m.sessionFileReads, msg.AbsPath)
@@ -4434,14 +4435,14 @@ func (m *UI) toggleMCP(name string, disable bool) tea.Cmd {
 			return mcpToggledMsg{Name: name, Disabled: true, Info: fmt.Sprintf("MCP %s disabled", name)}
 		}
 
-		// Update in-memory config before InitializeSingle, which checks
-		// the Disabled field to decide whether to proceed.
+		// Persist first (which triggers autoReload from disk), then set
+		// the in-memory Disabled flag so InitializeSingle sees it.
+		if err := m.persistMCPDisabled(store, name, false); err != nil {
+			return util.ReportError(err)()
+		}
 		if cfg, ok := store.Config().MCP[name]; ok {
 			cfg.Disabled = false
 			store.Config().MCP[name] = cfg
-		}
-		if err := m.persistMCPDisabled(store, name, false); err != nil {
-			return util.ReportError(err)()
 		}
 		ctx := context.Background()
 		if err := mcp.InitializeSingle(ctx, name, store); err != nil {
