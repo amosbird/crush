@@ -24,7 +24,7 @@ require (
 	github.com/charlievieth/fastwalk v1.0.14
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/openai-go v0.0.0-20260319145158-d0740cc34266
-	github.com/charmbracelet/ultraviolet v0.0.0-20260205113103-524a6607adb8
+	github.com/charmbracelet/ultraviolet v0.0.0-20260416161146-9c68a866306c
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/charmbracelet/x/editor v0.2.0
 	github.com/charmbracelet/x/etag v0.2.0
@@ -70,7 +70,7 @@ require (
 	go.uber.org/goleak v1.3.0
 	golang.org/x/net v0.52.0
 	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.42.0
+	golang.org/x/sys v0.43.0
 	golang.org/x/text v0.35.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -218,10 +218,6 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
-
-// Constraint-based layout engine, wide-character rendering fixes, and
-// synchronized updates (DEC mode 2026).
-replace github.com/charmbracelet/ultraviolet => github.com/amosbird/ultraviolet v0.0.0-20260409082807-6080ea272617
 
 // Word-boundary aware Ctrl+W/Ctrl+D and CJK cursor positioning fix.
 replace charm.land/bubbles/v2 => github.com/amosbird/bubbles/v2 v2.1.1-0.20260329024325-01e52635f8e0
