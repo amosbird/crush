@@ -91,12 +91,20 @@ func NewShell(opts *Options) *Shell {
 		"AI_AGENT=crush",
 	)
 
-	// Prevent child processes (e.g. git) from opening interactive editors.
+	// Prevent child processes from opening interactive editors, pagers,
+	// or blocking on credential/passphrase prompts. Since shells run
+	// without a TTY, any program that tries to read from /dev/tty will
+	// block forever. These env vars make common tools fail fast instead.
 	env = append(
 		env,
 		"GIT_EDITOR=:",
 		"GIT_MERGE_AUTOEDIT=no",
 		"GIT_PAGER=cat",
+		"GIT_TERMINAL_PROMPT=0",
+		"SSH_ASKPASS=",
+		"SSH_ASKPASS_REQUIRE=never",
+		"GPG_TTY=",
+		"PINENTRY_USER_DATA=",
 	)
 
 	logger := opts.Logger
