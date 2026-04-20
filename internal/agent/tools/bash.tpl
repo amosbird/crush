@@ -1,4 +1,4 @@
-Executes bash commands with automatic background conversion for long-running tasks.
+Executes bash commands. Commands block until completion — there is no timeout, even for long builds.
 
 <cross_platform>
 Uses mvdan/sh interpreter (Bash-compatible on all platforms including Windows).
@@ -10,9 +10,8 @@ Common shell builtins and core utils available on Windows.
 1. Directory Verification: If creating directories/files, use LS tool to verify parent exists
 2. Security Check: Banned commands ({{ .BannedCommands }}) return error - explain to user. Safe read-only commands execute without prompts
 3. Command Execution: Execute with proper quoting, capture output
-4. Auto-Background: Commands exceeding 1 minute (default, configurable via `auto_background_after`) automatically move to background and return shell ID
-5. Output Processing: Truncate if exceeds {{ .MaxOutputLength }} characters
-6. Return Result: Include errors, metadata with <cwd></cwd> tags
+4. Output Processing: Truncate if exceeds {{ .MaxOutputLength }} characters
+5. Return Result: Include errors, metadata with <cwd></cwd> tags
 </execution_steps>
 
 <usage_notes>
@@ -27,23 +26,14 @@ Common shell builtins and core utils available on Windows.
 </usage_notes>
 
 <background_execution>
-- Set run_in_background=true to run commands in a separate background shell
-- Returns a shell ID for managing the background process
-- Use job_output tool to view current output from background shell
-- Use job_kill tool to terminate a background shell
-- IMPORTANT: NEVER use `&` at the end of commands to run in background - use run_in_background parameter instead
-- When a command is automatically moved to background (exceeded timeout), do NOT stop and ask the user. Continue with other tasks. The user can monitor the job via the UI. If the job result is needed for subsequent steps, use job_output with wait=true to block until completion.
-- Commands that should run in background:
-  * Long-running servers (e.g., `npm start`, `python -m http.server`, `node server.js`)
-  * Watch/monitoring tasks (e.g., `npm run watch`, `tail -f logfile`)
-  * Continuous processes that don't exit on their own
-  * Any command expected to run indefinitely
-- Commands that should NOT run in background:
-  * Build commands (e.g., `npm run build`, `go build`)
-  * Test suites (e.g., `npm test`, `pytest`)
-  * Git operations
-  * File operations
-  * Short-lived scripts
+- IMPORTANT: NEVER use run_in_background for builds, tests, git operations, or
+  any command that eventually exits. Those commands block until done — even if
+  they take minutes. There is no timeout.
+- run_in_background=true is ONLY for processes that run forever and never exit
+  on their own: servers, watchers, daemons (e.g., `npm start`, `node server.js`,
+  `python -m http.server`, `npm run watch`, `tail -f`).
+- NEVER use `&` at the end of commands to run in background - use
+  run_in_background parameter instead.
 </background_execution>
 
 <process_lifecycle>
@@ -64,10 +54,8 @@ never completes and appears stuck.
   service, start it in a SEPARATE bash call with run_in_background=true,
   then run your commands in another bash call.
 
-- When using run_in_background=true for a service, always call job_kill
-  when you are done with it. Do not leave orphan background jobs.
-  Exception: if the USER explicitly asked you to start a service for them,
-  leave it running — the user will manage its lifecycle.
+- When using run_in_background=true for a service started at the user's
+  request, leave it running — the user will manage its lifecycle.
 
 - When writing multi-step scripts that start helper services:
   1. Start the service, capture its PID

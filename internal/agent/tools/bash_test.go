@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"charm.land/fantasy"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
-	"github.com/charmbracelet/crush/internal/shell"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,26 +57,19 @@ func TestBashTool_DefaultAutoBackgroundThreshold(t *testing.T) {
 	require.Contains(t, meta.Output, "done")
 }
 
-func TestBashTool_CustomAutoBackgroundThreshold(t *testing.T) {
+func TestBashTool_CancelledByContext(t *testing.T) {
 	workingDir := t.TempDir()
 	tool := newBashToolForTest(workingDir)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
 
-	resp := runBashTool(t, tool, ctx, BashParams{
-		Description:         "custom threshold",
-		Command:             "sleep 1.5 && echo done",
-		AutoBackgroundAfter: 1,
+	// Command runs forever; context cancellation should kill it.
+	_, err := tool.Run(ctx, fantasy.ToolCall{
+		Input: `{"command":"sleep 60","description":"cancel test"}`,
 	})
 
-	require.False(t, resp.IsError)
-	var meta BashResponseMetadata
-	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
-	require.True(t, meta.Background)
-	require.NotEmpty(t, meta.ShellID)
-	require.Contains(t, resp.Content, "moved to background")
-
-	bgManager := shell.GetBackgroundShellManager()
-	require.NoError(t, bgManager.Kill(context.Background(), meta.ShellID))
+	require.Error(t, err)
 }
 
 func newBashToolForTest(workingDir string) fantasy.AgentTool {

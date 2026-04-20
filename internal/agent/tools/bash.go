@@ -6,7 +6,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -24,8 +23,7 @@ type BashParams struct {
 	Description         string `json:"description" description:"A brief description of what the command does, try to keep it under 30 characters or so"`
 	Command             string `json:"command" description:"The command to execute"`
 	WorkingDir          string `json:"working_dir,omitempty" description:"The working directory to execute the command in (defaults to current directory)"`
-	RunInBackground     bool   `json:"run_in_background,omitempty" description:"Set to true (boolean) to run this command in the background. Use job_output to read the output later."`
-	AutoBackgroundAfter int    `json:"auto_background_after,omitempty" description:"Seconds to wait before automatically moving the command to a background job (default: 60)"`
+	RunInBackground     bool   `json:"run_in_background,omitempty" description:"Set to true ONLY for processes that never exit on their own (servers, watchers, daemons). NEVER use for builds, tests, or any command that finishes."`
 }
 
 type BashPermissionsParams struct {
@@ -33,7 +31,6 @@ type BashPermissionsParams struct {
 	Command             string `json:"command"`
 	WorkingDir          string `json:"working_dir"`
 	RunInBackground     bool   `json:"run_in_background"`
-	AutoBackgroundAfter int    `json:"auto_background_after"`
 }
 
 type BashResponseMetadata struct {
@@ -49,9 +46,8 @@ type BashResponseMetadata struct {
 const (
 	BashToolName = "bash"
 
-	DefaultAutoBackgroundAfter = 60 // Commands taking longer automatically become background jobs
-	MaxOutputLength            = 30000
-	BashNoOutput               = "no output"
+	MaxOutputLength = 30000
+	BashNoOutput    = "no output"
 )
 
 //go:embed bash.tpl
@@ -286,14 +282,20 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 					Background:       true,
 					ShellID:          bgShell.ID,
 				}
-				response := fmt.Sprintf("Background shell started with ID: %s\n\nUse job_output tool to view output or job_kill to terminate.", bgShell.ID)
+				response := fmt.Sprintf("Background shell started with ID: %s", bgShell.ID)
 				return fantasy.WithResponseMetadata(fantasy.NewTextResponse(response), metadata), nil
 			}
 
-			// Start synchronous execution with auto-background support
+			// Start synchronous execution.
+			// The bash tool blocks until the command completes or the
+			// context is cancelled (e.g. user presses Escape in the UI).
+			// There is no timeout — even very long builds complete in a
+			// single tool call. Stuck commands (waiting for interactive
+			// input) are prevented by environment variables
+			// (GIT_TERMINAL_PROMPT=0, SSH_ASKPASS=, etc.) and can be
+			// cancelled by the user via the UI.
 			startTime := time.Now()
 
-			// Start with detached context so it can survive if moved to background
 			bgManager := shell.GetBackgroundShellManager()
 			bgManager.Cleanup()
 			bgShell, err := bgManager.Start(context.Background(), execWorkingDir, blockFuncs(), params.Command, params.Description)
@@ -301,13 +303,8 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("error starting shell: %s", err)), nil
 			}
 
-			// Wait for either completion, auto-background threshold, or context cancellation
-			ticker := time.NewTicker(100 * time.Millisecond)
+			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
-
-			autoBackgroundAfter := cmp.Or(params.AutoBackgroundAfter, DefaultAutoBackgroundAfter)
-			autoBackgroundThreshold := time.Duration(autoBackgroundAfter) * time.Second
-			timeout := time.After(autoBackgroundThreshold)
 
 			var stdout, stderr string
 			var done bool
@@ -321,63 +318,37 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 					if done {
 						break waitLoop
 					}
-				case <-timeout:
-					stdout, stderr, done, execErr = bgShell.GetOutput()
-					break waitLoop
 				case <-ctx.Done():
-					// Incoming context was cancelled before we moved to background.
-					// Kill the shell and return error. Use a background context
-					// since ctx is already cancelled.
 					bgManager.Kill(context.Background(), bgShell.ID)
 					return fantasy.ToolResponse{}, ctx.Err()
 				}
 			}
 
-			if done {
-				// Command completed within threshold - return synchronously
-				// Remove from background manager since we're returning directly
-				// Don't call Kill() as it cancels the context and corrupts the exit code
-				bgManager.Remove(bgShell.ID)
+			// Command completed.
+			bgManager.Remove(bgShell.ID)
 
-				interrupted := shell.IsInterrupt(execErr)
-				exitCode := shell.ExitCode(execErr)
+			interrupted := shell.IsInterrupt(execErr)
+			exitCode := shell.ExitCode(execErr)
 
-				if exitCode == 0 && !interrupted && execErr != nil {
-					return fantasy.NewTextErrorResponse(fmt.Sprintf("[Job %s] error executing command: %s", bgShell.ID, execErr)), nil
-				}
-
-				stdout = formatOutput(stdout, stderr, execErr)
-
-				metadata := BashResponseMetadata{
-					StartTime:        startTime.UnixMilli(),
-					EndTime:          time.Now().UnixMilli(),
-					Output:           stdout,
-					Description:      params.Description,
-					Background:       params.RunInBackground,
-					WorkingDirectory: bgShell.WorkingDir,
-				}
-				if stdout == "" {
-					return fantasy.WithResponseMetadata(fantasy.NewTextResponse(BashNoOutput), metadata), nil
-				}
-				stdout += fmt.Sprintf("\n\n<cwd>%s</cwd>", normalizeWorkingDir(bgShell.WorkingDir))
-				return fantasy.WithResponseMetadata(fantasy.NewTextResponse(stdout), metadata), nil
+			if exitCode == 0 && !interrupted && execErr != nil {
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("[Job %s] error executing command: %s", bgShell.ID, execErr)), nil
 			}
 
-			// Still running - keep as background job
-			slog.Debug("Bash: command auto-backgrounded",
-				"shell_id", bgShell.ID,
-				"command", params.Command,
-				"elapsed", time.Since(startTime).String())
+			stdout = formatOutput(stdout, stderr, execErr)
+
 			metadata := BashResponseMetadata{
 				StartTime:        startTime.UnixMilli(),
 				EndTime:          time.Now().UnixMilli(),
+				Output:           stdout,
 				Description:      params.Description,
+				Background:       params.RunInBackground,
 				WorkingDirectory: bgShell.WorkingDir,
-				Background:       true,
-				ShellID:          bgShell.ID,
 			}
-			response := fmt.Sprintf("Command is taking longer than expected and has been moved to background.\n\nBackground shell ID: %s\n\nUse job_output tool to view output or job_kill to terminate.", bgShell.ID)
-			return fantasy.WithResponseMetadata(fantasy.NewTextResponse(response), metadata), nil
+			if stdout == "" {
+				return fantasy.WithResponseMetadata(fantasy.NewTextResponse(BashNoOutput), metadata), nil
+			}
+			stdout += fmt.Sprintf("\n\n<cwd>%s</cwd>", normalizeWorkingDir(bgShell.WorkingDir))
+			return fantasy.WithResponseMetadata(fantasy.NewTextResponse(stdout), metadata), nil
 		}), nil
 }
 
