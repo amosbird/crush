@@ -62,6 +62,20 @@ func TestCheckForUpdate_DevBuild(t *testing.T) {
 	})
 }
 
+func TestCheckForUpdate_Dirty(t *testing.T) {
+	t.Run("dirty behind release", func(t *testing.T) {
+		info, err := Check(t.Context(), "v0.56.1-0.20260413044447-d1274568a06b+dirty", time.Time{}, testClient{"v0.57.0"})
+		require.NoError(t, err)
+		require.True(t, info.Available())
+	})
+
+	t.Run("dirty at release", func(t *testing.T) {
+		info, err := Check(t.Context(), "v0.57.0+dirty", time.Time{}, testClient{"v0.57.0"})
+		require.NoError(t, err)
+		require.False(t, info.Available())
+	})
+}
+
 type testClient struct{ tag string }
 
 // Latest implements Client.

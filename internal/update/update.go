@@ -29,9 +29,10 @@ type Info struct {
 // Matches a version string like:
 // v0.0.0-0.20251231235959-06c807842604
 var goInstallRegexp = regexp.MustCompile(`^v?\d+\.\d+\.\d+-\d+\.\d{14}-[0-9a-f]{12}$`)
+var semverRegexp = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
 func (i Info) IsDevelopment() bool {
-	return i.Current == "devel" || i.Current == "unknown" || strings.Contains(i.Current, "dirty") || goInstallRegexp.MatchString(i.Current)
+	return i.Current == "devel" || i.Current == "unknown" || goInstallRegexp.MatchString(i.Current)
 }
 
 // Available returns true if there's an update available.
@@ -46,15 +47,35 @@ func (i Info) Available() bool {
 		}
 		return i.LatestPubTime.After(i.BuildTime)
 	}
-	cpr := strings.Contains(i.Current, "-")
-	lpr := strings.Contains(i.Latest, "-")
+	current := cleanVersion(i.Current)
+	latest := i.Latest
+	cpr := strings.Contains(current, "-")
+	lpr := strings.Contains(latest, "-")
 	if cpr && !lpr {
 		return true
 	}
 	if lpr && !cpr {
 		return false
 	}
-	return i.Current != i.Latest
+	return current != latest
+}
+
+// cleanVersion strips dirty suffixes and pseudo-version metadata so that
+// a locally-built version like "0.56.1-0.20260413044447-d1274568a06b+dirty"
+// is compared as its base version "0.56.1".
+func cleanVersion(v string) string {
+	v = strings.TrimSuffix(v, "+dirty")
+	if goInstallRegexp.MatchString(v) {
+		return v
+	}
+	// Strip pseudo-version suffix: "0.56.1-0.20260413...-abcdef123456" → "0.56.1".
+	if i := strings.Index(v, "-0."); i != -1 {
+		candidate := v[:i]
+		if semverRegexp.MatchString(candidate) {
+			return candidate
+		}
+	}
+	return v
 }
 
 // Check checks if a new version is available.
