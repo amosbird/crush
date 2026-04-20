@@ -34,6 +34,9 @@ Common shell builtins and core utils available on Windows.
   `python -m http.server`, `npm run watch`, `tail -f`).
 - NEVER use `&` at the end of commands to run in background - use
   run_in_background parameter instead.
+- To kill a background process, use kill_background_id with the shell ID
+  returned when the process was started. When kill_background_id is set,
+  command and other params are ignored.
 </background_execution>
 
 <process_lifecycle>

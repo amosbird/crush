@@ -20,17 +20,19 @@ import (
 )
 
 type BashParams struct {
-	Description         string `json:"description" description:"A brief description of what the command does, try to keep it under 30 characters or so"`
-	Command             string `json:"command" description:"The command to execute"`
-	WorkingDir          string `json:"working_dir,omitempty" description:"The working directory to execute the command in (defaults to current directory)"`
-	RunInBackground     bool   `json:"run_in_background,omitempty" description:"Set to true ONLY for processes that never exit on their own (servers, watchers, daemons). NEVER use for builds, tests, or any command that finishes."`
+	Description      string `json:"description" description:"A brief description of what the command does, try to keep it under 30 characters or so"`
+	Command          string `json:"command" description:"The command to execute"`
+	WorkingDir       string `json:"working_dir,omitempty" description:"The working directory to execute the command in (defaults to current directory)"`
+	RunInBackground  bool   `json:"run_in_background,omitempty" description:"Set to true ONLY for processes that never exit on their own (servers, watchers, daemons). NEVER use for builds, tests, or any command that finishes."`
+	KillBackgroundID string `json:"kill_background_id,omitempty" description:"Shell ID of a background process to kill (returned when run_in_background was used). When set, command and other params are ignored."`
 }
 
 type BashPermissionsParams struct {
-	Description         string `json:"description"`
-	Command             string `json:"command"`
-	WorkingDir          string `json:"working_dir"`
-	RunInBackground     bool   `json:"run_in_background"`
+	Description      string `json:"description"`
+	Command          string `json:"command"`
+	WorkingDir       string `json:"working_dir"`
+	RunInBackground  bool   `json:"run_in_background"`
+	KillBackgroundID string `json:"kill_background_id"`
 }
 
 type BashResponseMetadata struct {
@@ -193,6 +195,14 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 		BashToolName,
 		desc,
 		func(ctx context.Context, params BashParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+			if params.KillBackgroundID != "" {
+				bgManager := shell.GetBackgroundShellManager()
+				if err := bgManager.Kill(ctx, params.KillBackgroundID); err != nil {
+					return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to kill background shell %s: %s", params.KillBackgroundID, err)), nil
+				}
+				return fantasy.NewTextResponse(fmt.Sprintf("Background shell %s terminated.", params.KillBackgroundID)), nil
+			}
+
 			if params.Command == "" {
 				return fantasy.NewTextErrorResponse("missing command"), nil
 			}
