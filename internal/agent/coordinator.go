@@ -568,8 +568,6 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent) ([]fan
 		bashTool,
 		tools.NewCrushInfoTool(c.cfg, c.lspManager, c.allSkills, c.activeSkills, c.skillTracker),
 		tools.NewCrushLogsTool(logFile),
-		tools.NewJobOutputTool(),
-		tools.NewJobKillTool(),
 		tools.NewDiffTool(c.cfg.WorkingDir()),
 		tools.NewDownloadTool(c.permissions, c.cfg.WorkingDir(), nil),
 		tools.NewEditTool(c.lspManager, c.permissions, c.history, c.filetracker, c.cfg.WorkingDir()),

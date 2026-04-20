@@ -495,8 +495,6 @@ func allToolNames() []string {
 		"bash",
 		"crush_info",
 		"crush_logs",
-		"job_output",
-		"job_kill",
 		"download",
 		"edit",
 		"multiedit",
