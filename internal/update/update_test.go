@@ -39,24 +39,21 @@ func TestCheckForUpdate_Beta(t *testing.T) {
 }
 
 func TestCheckForUpdate_DevBuild(t *testing.T) {
-	releaseTime := time.Date(2026, 4, 10, 9, 0, 0, 0, time.UTC)
-
-	t.Run("dev build older than release", func(t *testing.T) {
-		buildTime := releaseTime.Add(-1 * time.Hour)
+	t.Run("dev build always available", func(t *testing.T) {
+		buildTime := time.Date(2026, 4, 10, 10, 0, 0, 0, time.UTC)
 		info, err := Check(t.Context(), "devel", buildTime, testClient{"v0.56.0"})
 		require.NoError(t, err)
 		require.True(t, info.Available())
 	})
 
-	t.Run("dev build newer than release", func(t *testing.T) {
-		buildTime := releaseTime.Add(1 * time.Hour)
-		info, err := Check(t.Context(), "devel", buildTime, testClient{"v0.56.0"})
+	t.Run("go install pseudo-version", func(t *testing.T) {
+		info, err := Check(t.Context(), "v0.0.0-0.20260413044447-d1274568a06b", time.Time{}, testClient{"v0.56.0"})
 		require.NoError(t, err)
-		require.False(t, info.Available())
+		require.True(t, info.Available())
 	})
 
-	t.Run("dev build no build time", func(t *testing.T) {
-		info, err := Check(t.Context(), "devel", time.Time{}, testClient{"v0.56.0"})
+	t.Run("go install pseudo-version with dirty", func(t *testing.T) {
+		info, err := Check(t.Context(), "v0.56.1-0.20260413044447-d1274568a06b+dirty", time.Time{}, testClient{"v0.56.0"})
 		require.NoError(t, err)
 		require.True(t, info.Available())
 	})

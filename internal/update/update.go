@@ -32,20 +32,18 @@ var goInstallRegexp = regexp.MustCompile(`^v?\d+\.\d+\.\d+-\d+\.\d{14}-[0-9a-f]{
 var semverRegexp = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
 func (i Info) IsDevelopment() bool {
-	return i.Current == "devel" || i.Current == "unknown" || goInstallRegexp.MatchString(i.Current)
+	v := strings.TrimSuffix(i.Current, "+dirty")
+	return i.Current == "devel" || i.Current == "unknown" || goInstallRegexp.MatchString(v)
 }
 
 // Available returns true if there's an update available.
 //
-// For development builds, compares the local build time against the
-// release publish time — only offers an update if the release is newer.
-// For release builds, compares version strings.
+// For development builds, always considers an update available so the
+// user can pull the latest release. For release builds, compares
+// version strings.
 func (i Info) Available() bool {
 	if i.IsDevelopment() {
-		if i.BuildTime.IsZero() {
-			return true
-		}
-		return i.LatestPubTime.After(i.BuildTime)
+		return true
 	}
 	current := cleanVersion(i.Current)
 	latest := i.Latest
