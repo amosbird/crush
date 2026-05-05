@@ -66,6 +66,8 @@ type Anim struct {
 	ellipsisStep   atomic.Int64
 	id             string
 	tag            atomic.Int64
+
+	renderedSpinnerFrames *csync.Slice[string]
 }
 
 // New creates a new Anim instance.
@@ -96,12 +98,24 @@ func New(opts Settings) *Anim {
 	}
 
 	a.renderLabel(opts.Label)
+	a.renderSpinnerFrames()
 	return a
 }
 
 // SetSpinnerColor updates the spinner color.
 func (a *Anim) SetSpinnerColor(c color.Color) {
 	a.spinnerColor = c
+	a.renderSpinnerFrames()
+}
+
+// renderSpinnerFrames pre-renders all braille spinner frames with the
+// current spinner color so Render() avoids allocating styles every frame.
+func (a *Anim) renderSpinnerFrames() {
+	a.renderedSpinnerFrames = csync.NewSlice[string]()
+	sty := lipgloss.NewStyle().Foreground(a.spinnerColor)
+	for _, frame := range braileFrames {
+		a.renderedSpinnerFrames.Append(sty.Render(string(frame)))
+	}
 }
 
 // SetLabel updates the label text and re-renders it.
@@ -137,6 +151,11 @@ func (a *Anim) renderLabel(label string) {
 		a.label = csync.NewSlice[string]()
 		a.ellipsisFrames = csync.NewSlice[string]()
 	}
+}
+
+// Step returns the current animation step, useful for cache invalidation.
+func (a *Anim) Step() int64 {
+	return a.step.Load()
 }
 
 // Width returns the total width of the animation.
@@ -188,11 +207,10 @@ func (a *Anim) Render() string {
 	var b strings.Builder
 	step := int(a.step.Load())
 
-	// Render braille spinner character
-	frame := braileFrames[step%len(braileFrames)]
-	b.WriteString(lipgloss.NewStyle().
-		Foreground(a.spinnerColor).
-		Render(string(frame)))
+	// Render braille spinner character.
+	if rendered, ok := a.renderedSpinnerFrames.Get(step % len(braileFrames)); ok {
+		b.WriteString(rendered)
+	}
 
 	// Render label
 	if a.labelWidth > 0 {

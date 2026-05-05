@@ -171,6 +171,8 @@ type baseToolMessageItem struct {
 	runStartedAt    time.Time
 
 	pendingPreview *TextPreviewContent
+
+	lastAnimStep int64
 }
 
 var _ Expandable = (*baseToolMessageItem)(nil)
@@ -318,8 +320,10 @@ func (t *baseToolMessageItem) RawRender(width int) string {
 	}
 
 	content, height, ok := t.getCachedRender(toolItemWidth)
-	// if we are spinning or there is no cache rerender
-	if !ok || t.isSpinning() {
+	// If we are spinning, only re-render when the animation step changes.
+	currentStep := t.anim.Step()
+	if !ok || (t.isSpinning() && t.lastAnimStep != currentStep) {
+		t.lastAnimStep = currentStep
 		content = t.toolRenderer.RenderTool(t.sty, toolItemWidth, &ToolRenderOpts{
 			ToolCall:        t.toolCall,
 			Result:          t.result,

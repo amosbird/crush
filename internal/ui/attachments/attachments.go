@@ -34,29 +34,41 @@ type Attachments struct {
 	keyMap   Keymap
 	list     []message.Attachment
 	deleting bool
+
+	cachedRender string
+	cachedWidth  int
+	cacheDirty   bool
 }
 
 func (m *Attachments) List() []message.Attachment { return m.list }
-func (m *Attachments) Reset()                     { m.list = nil }
+
+func (m *Attachments) Reset() {
+	m.list = nil
+	m.cacheDirty = true
+}
 
 func (m *Attachments) Update(msg tea.Msg) bool {
 	switch msg := msg.(type) {
 	case message.Attachment:
 		m.list = append(m.list, msg)
+		m.cacheDirty = true
 		return true
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.keyMap.DeleteMode):
 			if len(m.list) > 0 {
 				m.deleting = true
+				m.cacheDirty = true
 			}
 			return true
 		case m.deleting && key.Matches(msg, m.keyMap.Escape):
 			m.deleting = false
+			m.cacheDirty = true
 			return true
 		case m.deleting && key.Matches(msg, m.keyMap.DeleteAll):
 			m.deleting = false
 			m.list = nil
+			m.cacheDirty = true
 			return true
 		case m.deleting:
 			r := msg.Code
@@ -64,6 +76,7 @@ func (m *Attachments) Update(msg tea.Msg) bool {
 				num := int(r - '0')
 				if num < len(m.list) {
 					m.list = slices.Delete(m.list, num, num+1)
+					m.cacheDirty = true
 				}
 				m.deleting = false
 			}
@@ -82,6 +95,7 @@ func (m *Attachments) HandleClick(x int) bool {
 		iconWidth := lipgloss.Width(m.renderer.icon(att).String())
 		if x >= offset && x < offset+iconWidth {
 			m.list = slices.Delete(m.list, i, i+1)
+			m.cacheDirty = true
 			return true
 		}
 		offset += m.renderer.chipWidth(att)
@@ -104,7 +118,13 @@ func (m *Attachments) AttachmentAt(x int) *message.Attachment {
 }
 
 func (m *Attachments) Render(width int) string {
-	return m.renderer.Render(m.list, m.deleting, width)
+	if !m.cacheDirty && m.cachedWidth == width && m.cachedRender != "" {
+		return m.cachedRender
+	}
+	m.cachedRender = m.renderer.Render(m.list, m.deleting, width)
+	m.cachedWidth = width
+	m.cacheDirty = false
+	return m.cachedRender
 }
 
 func NewRenderer(normalStyle, deletingStyle, imageStyle, textStyle lipgloss.Style) *Renderer {
