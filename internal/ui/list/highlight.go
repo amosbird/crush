@@ -22,15 +22,43 @@ var DefaultHighlighter Highlighter = func(x, y int, c *uv.Cell) *uv.Cell {
 type Highlighter func(x, y int, c *uv.Cell) *uv.Cell
 
 // HighlightContent returns the content with highlighted regions based on the specified parameters.
-func HighlightContent(content string, area image.Rectangle, startLine, startCol, endLine, endCol int) string {
+func HighlightContent(content string, area image.Rectangle, startLine, startCol, endLine, endCol int, softWrapped ...[]bool) string {
 	var sb strings.Builder
 	pos := image.Pt(-1, -1)
+
+	// If soft-wrap info is provided, use it to decide whether to insert
+	// newlines at line boundaries.
+	var sw []bool
+	if len(softWrapped) > 0 {
+		sw = softWrapped[0]
+	}
+
 	HighlightBuffer(content, area, startLine, startCol, endLine, endCol, func(x, y int, c *uv.Cell) *uv.Cell {
 		pos.X = x
 		if pos.Y == -1 {
 			pos.Y = y
 		} else if y > pos.Y {
-			sb.WriteString(strings.Repeat("\n", y-pos.Y))
+			for ly := pos.Y + 1; ly <= y; ly++ {
+				if len(sw) > 0 && ly < len(sw) && sw[ly] {
+					// Soft-wrap: join with the previous line.
+					// Word-wrap breaks at spaces or punctuation
+					// breakpoints (e.g. hyphens, commas). When the
+					// break was at a space, the space was consumed
+					// and we need to restore it. When the break was
+					// at a punctuation character (which stays at the
+					// end of the previous line), no space is needed.
+					if n := sb.Len(); n > 0 {
+						switch sb.String()[n-1] {
+						case '-', ',', '.', ';', '+', '|':
+							// Breakpoint char retained — no space.
+						default:
+							sb.WriteByte(' ')
+						}
+					}
+					continue
+				}
+				sb.WriteByte('\n')
+			}
 			pos.Y = y
 		}
 		sb.WriteString(c.Content)

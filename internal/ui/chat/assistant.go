@@ -41,6 +41,11 @@ type AssistantMessageItem struct {
 	mdRendererWidth    int
 	plainRenderer      *glamour.TermRenderer
 	plainRendererWidth int
+
+	cachedSoftWrapped      []bool
+	cachedSoftWrappedWidth int
+
+	unwrappedRenderer *glamour.TermRenderer
 }
 
 // NewAssistantMessageItem creates a new AssistantMessageItem.
@@ -294,6 +299,102 @@ func (a *AssistantMessageItem) PendingTextPreview() *TextPreviewContent {
 	p := a.pendingPreview
 	a.pendingPreview = nil
 	return p
+}
+
+// SoftWrapped returns a bool slice indicating which visual lines are
+// soft-wrap continuations produced by word wrapping.
+func (a *AssistantMessageItem) SoftWrapped(width int) []bool {
+	cappedWidth := cappedMessageWidth(width)
+
+	if a.cachedSoftWrapped != nil && a.cachedSoftWrappedWidth == cappedWidth {
+		return a.cachedSoftWrapped
+	}
+
+	content, _, ok := a.getCachedRender(cappedWidth)
+	if !ok {
+		content = a.renderMessageContent(cappedWidth)
+	}
+	a.cachedSoftWrapped = computeSoftWrapped(content, a.renderMessageContentUnwrapped(cappedWidth))
+	a.cachedSoftWrappedWidth = cappedWidth
+	return a.cachedSoftWrapped
+}
+
+// computeSoftWrapped aligns wrapped and unwrapped renders line-by-line to
+// determine which lines in the wrapped version are soft-wrap continuations.
+func computeSoftWrapped(wrapped, unwrapped string) []bool {
+	wrappedLines := strings.Split(wrapped, "\n")
+	unwrappedLines := strings.Split(unwrapped, "\n")
+	result := make([]bool, len(wrappedLines))
+
+	wi := 0
+	for _, uline := range unwrappedLines {
+		if wi >= len(wrappedLines) {
+			break
+		}
+		utext := strings.TrimRight(ansi.Strip(uline), " ")
+		ucount := countNonSpace(utext)
+		accum := 0
+		first := true
+		for wi < len(wrappedLines) {
+			wtext := strings.TrimRight(ansi.Strip(wrappedLines[wi]), " ")
+			accum += countNonSpace(wtext)
+			if !first {
+				result[wi] = true
+			}
+			first = false
+			wi++
+			if accum >= ucount {
+				break
+			}
+		}
+	}
+
+	return result
+}
+
+// renderMessageContentUnwrapped renders message content without word wrapping.
+func (a *AssistantMessageItem) renderMessageContentUnwrapped(width int) string {
+	var messageParts []string
+	thinking := strings.TrimSpace(a.message.ReasoningContent().Thinking)
+	content := strings.TrimSpace(a.message.Content().Text)
+	if thinking != "" {
+		messageParts = append(messageParts, a.renderThinking(a.message.ReasoningContent().Thinking, width))
+	}
+	if content != "" {
+		if thinking != "" {
+			messageParts = append(messageParts, "")
+		}
+		r := a.unwrappedRenderer
+		if r == nil {
+			r = common.MarkdownRenderer(a.sty, 10000)
+			a.unwrappedRenderer = r
+		}
+		result, err := r.Render(content)
+		if err == nil {
+			content = strings.TrimSuffix(result, "\n")
+		}
+		messageParts = append(messageParts, content)
+	}
+	if a.message.IsFinished() {
+		switch a.message.FinishReason() {
+		case message.FinishReasonCanceled:
+			messageParts = append(messageParts, a.sty.Base.Italic(true).Render("Canceled"))
+		case message.FinishReasonError:
+			messageParts = append(messageParts, a.renderError(width))
+		}
+	}
+	return strings.Join(messageParts, "\n")
+}
+
+// countNonSpace returns the number of non-space runes in s.
+func countNonSpace(s string) int {
+	n := 0
+	for _, r := range s {
+		if r != ' ' {
+			n++
+		}
+	}
+	return n
 }
 
 // HandleKeyEvent implements KeyEventHandler.

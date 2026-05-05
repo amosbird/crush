@@ -21,6 +21,14 @@ type RawRenderable interface {
 	RawRender(width int) string
 }
 
+// SoftWrappable represents an item that can report which of its rendered
+// lines are soft-wrap continuations. The returned slice is indexed by
+// visual line number; true means the line is a continuation of the
+// previous line and should not produce a newline when copying.
+type SoftWrappable interface {
+	SoftWrapped(width int) []bool
+}
+
 // Focusable represents an item that can be aware of focus state changes.
 type Focusable interface {
 	// SetFocused sets the focus state of the item.

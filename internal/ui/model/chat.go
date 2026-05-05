@@ -912,6 +912,10 @@ func (m *Chat) HighlightContent() string {
 			} else {
 				rendered = item.Render(listWidth)
 			}
+			var sw []bool
+			if swa, ok := item.(list.SoftWrappable); ok {
+				sw = swa.SoftWrapped(listWidth)
+			}
 			sb.WriteString(list.HighlightContent(
 				rendered,
 				uv.Rect(0, 0, listWidth, lipgloss.Height(rendered)),
@@ -919,6 +923,7 @@ func (m *Chat) HighlightContent() string {
 				startCol,
 				endLine,
 				endCol,
+				sw,
 			))
 			sb.WriteString(strings.Repeat("\n", m.list.Gap()))
 		}
