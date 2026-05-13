@@ -44,7 +44,7 @@ func NewDownloadTool(permissions permission.Service, workingDir string, client *
 	if client == nil {
 		client = &http.Client{
 			Timeout:   5 * time.Minute, // Default 5 minute timeout for downloads
-			Transport: SafeTransport(),
+			Transport: http.DefaultTransport.(*http.Transport).Clone(),
 		}
 	}
 	return fantasy.NewParallelAgentTool(
@@ -61,10 +61,6 @@ func NewDownloadTool(permissions permission.Service, workingDir string, client *
 
 			if !strings.HasPrefix(params.URL, "http://") && !strings.HasPrefix(params.URL, "https://") {
 				return fantasy.NewTextErrorResponse("URL must start with http:// or https://"), nil
-			}
-
-			if IsPrivateURL(params.URL) {
-				return fantasy.NewTextErrorResponse("access to private/internal network addresses is not allowed"), nil
 			}
 
 			filePath := filepathext.SmartJoin(workingDir, params.FilePath)

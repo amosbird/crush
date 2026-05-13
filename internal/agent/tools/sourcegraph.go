@@ -35,7 +35,7 @@ func NewSourcegraphTool(client *http.Client) fantasy.AgentTool {
 	if client == nil {
 		client = &http.Client{
 			Timeout:   30 * time.Second,
-			Transport: SafeTransport(),
+			Transport: http.DefaultTransport.(*http.Transport).Clone(),
 		}
 	}
 	return fantasy.NewParallelAgentTool(

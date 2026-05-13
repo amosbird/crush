@@ -28,7 +28,7 @@ func NewFetchTool(permissions permission.Service, workingDir string, client *htt
 	if client == nil {
 		client = &http.Client{
 			Timeout:   30 * time.Second,
-			Transport: SafeTransport(),
+			Transport: http.DefaultTransport.(*http.Transport).Clone(),
 		}
 	}
 
@@ -47,10 +47,6 @@ func NewFetchTool(permissions permission.Service, workingDir string, client *htt
 
 			if !strings.HasPrefix(params.URL, "http://") && !strings.HasPrefix(params.URL, "https://") {
 				return fantasy.NewTextErrorResponse("URL must start with http:// or https://"), nil
-			}
-
-			if IsPrivateURL(params.URL) {
-				return fantasy.NewTextErrorResponse("access to private/internal network addresses is not allowed"), nil
 			}
 
 			// maxFetchTimeoutSeconds is the maximum allowed timeout for fetch requests (2 minutes)

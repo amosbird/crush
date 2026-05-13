@@ -23,10 +23,6 @@ var multipleNewlinesRe = regexp.MustCompile(`\n{3,}`)
 
 // FetchURLAndConvert fetches a URL and converts HTML content to markdown.
 func FetchURLAndConvert(ctx context.Context, client *http.Client, url string) (string, error) {
-	if IsPrivateURL(url) {
-		return "", fmt.Errorf("access to private/internal network addresses is not allowed")
-	}
-
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
